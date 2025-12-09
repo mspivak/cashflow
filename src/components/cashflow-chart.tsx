@@ -73,8 +73,8 @@ export function CashflowChart({ months }: CashflowChartProps) {
           <span className="text-muted-foreground">Actual</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-full bg-amber-500" />
-          <span className="text-muted-foreground">Cumulative</span>
+          <div className="w-2 h-2 rounded-sm bg-gray-400/40" />
+          <span className="text-muted-foreground">Balance</span>
         </div>
       </div>
 
@@ -95,9 +95,39 @@ export function CashflowChart({ months }: CashflowChartProps) {
           viewBox={`0 0 100 ${chartHeight}`}
           preserveAspectRatio="none"
         >
+          <defs>
+            <clipPath id="positiveClip">
+              <rect x="0" y="0" width="100" height={zeroY} />
+            </clipPath>
+            <clipPath id="negativeClip">
+              <rect x="0" y={zeroY} width="100" height={chartHeight - zeroY} />
+            </clipPath>
+          </defs>
+          <polygon
+            fill="rgba(156, 163, 175, 0.4)"
+            clipPath="url(#positiveClip)"
+            points={`${0.5 / chartData.length * 100},${zeroY} ${chartData
+              .map((data, i) => {
+                const x = ((i + 0.5) / chartData.length) * 100
+                const y = getCumulativeY(data.cumulativeExpected)
+                return `${x},${y}`
+              })
+              .join(" ")} ${((chartData.length - 0.5) / chartData.length) * 100},${zeroY}`}
+          />
+          <polygon
+            fill="rgba(239, 68, 68, 0.3)"
+            clipPath="url(#negativeClip)"
+            points={`${0.5 / chartData.length * 100},${zeroY} ${chartData
+              .map((data, i) => {
+                const x = ((i + 0.5) / chartData.length) * 100
+                const y = getCumulativeY(data.cumulativeExpected)
+                return `${x},${y}`
+              })
+              .join(" ")} ${((chartData.length - 0.5) / chartData.length) * 100},${zeroY}`}
+          />
           <polyline
             fill="none"
-            stroke="#f59e0b"
+            stroke="rgba(107, 114, 128, 0.8)"
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
             points={chartData
@@ -154,13 +184,13 @@ export function CashflowChart({ months }: CashflowChartProps) {
                   />
                 </div>
                 <div
-                  className="absolute w-2 h-2 bg-amber-500 rounded-full border border-white shadow-sm transition-all z-20"
+                  className="absolute w-2 h-2 bg-gray-500 rounded-full border border-white shadow-sm transition-all z-20"
                   style={{
                     top: getCumulativeY(data.cumulativeExpected) - 4,
                     left: "50%",
                     transform: "translateX(-50%)",
                   }}
-                  title={`Cumulative: $${data.cumulativeExpected.toLocaleString()}`}
+                  title={`Balance: $${data.cumulativeExpected.toLocaleString()}`}
                 />
               </div>
             )
