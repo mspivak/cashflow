@@ -3,9 +3,10 @@ import type { MonthData } from "@/types"
 
 interface CashflowChartProps {
   months: MonthData[]
+  startingBalance: number
 }
 
-export function CashflowChart({ months }: CashflowChartProps) {
+export function CashflowChart({ months, startingBalance }: CashflowChartProps) {
   const chartData = useMemo(() => {
     return months.map((month) => {
       let expectedIncome = 0
@@ -51,6 +52,7 @@ export function CashflowChart({ months }: CashflowChartProps) {
 
   const maxAbsCumulative = Math.max(
     ...chartData.map((d) => Math.abs(d.cumulativeExpected)),
+    Math.abs(startingBalance),
     1
   )
 
@@ -76,6 +78,10 @@ export function CashflowChart({ months }: CashflowChartProps) {
           <div className="w-2 h-2 rounded-sm bg-gray-400/40" />
           <span className="text-muted-foreground">Balance</span>
         </div>
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-sm bg-blue-500" />
+          <span className="text-muted-foreground">Starting Balance</span>
+        </div>
       </div>
 
       <div className="relative" style={{ height: chartHeight }}>
@@ -91,7 +97,7 @@ export function CashflowChart({ months }: CashflowChartProps) {
         </span>
 
         <svg
-          className="absolute inset-0 w-full h-full pointer-events-none z-10"
+          className="absolute inset-0 w-full h-full pointer-events-none"
           viewBox={`0 0 100 ${chartHeight}`}
           preserveAspectRatio="none"
         >
@@ -140,7 +146,16 @@ export function CashflowChart({ months }: CashflowChartProps) {
           />
         </svg>
 
-        <div className="flex gap-2 h-full">
+        <div
+          className="absolute w-2.5 h-2.5 bg-blue-500 rounded-sm border-2 border-white shadow-sm z-20"
+          style={{
+            top: getCumulativeY(startingBalance) - 5,
+            left: 0,
+          }}
+          title={`Starting Balance: $${startingBalance.toLocaleString()}`}
+        />
+
+        <div className="flex gap-2 h-full relative z-10">
           {chartData.map((data, i) => {
             const barAreaHeight = zeroY - 8
             const expIncomeHeight = (data.expectedIncome / maxBarValue) * barAreaHeight
@@ -152,34 +167,34 @@ export function CashflowChart({ months }: CashflowChartProps) {
                 className="flex-1 min-w-32 relative bg-muted/20 rounded-sm"
               >
                 <div
-                  className="absolute w-6 rounded-t-sm transition-all"
+                  className="absolute w-6 rounded-t-sm transition-all bg-green-500/40 overflow-hidden"
                   style={{
                     bottom: chartHeight - zeroY,
                     left: "50%",
                     transform: "translateX(-50%)",
                     height: Math.max(expIncomeHeight, data.expectedIncome > 0 ? 2 : 0),
+                    outline: "2px solid white",
                   }}
                   title={`Income - Expected: $${data.expectedIncome.toLocaleString()}, Actual: $${data.actualIncome.toLocaleString()}`}
                 >
-                  <div className="absolute inset-0 bg-green-500/40 rounded-t-sm" />
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-green-600 rounded-t-sm transition-all"
+                    className="absolute bottom-0 left-0 right-0 bg-green-600 transition-all"
                     style={{ height: expIncomeHeight > 0 ? `${(data.actualIncome / data.expectedIncome) * 100}%` : 0 }}
                   />
                 </div>
                 <div
-                  className="absolute w-6 rounded-b-sm transition-all"
+                  className="absolute w-6 rounded-b-sm transition-all bg-red-500/40 overflow-hidden"
                   style={{
                     top: zeroY,
                     left: "50%",
                     transform: "translateX(-50%)",
                     height: Math.max(expExpenseHeight, data.expectedExpenses > 0 ? 2 : 0),
+                    outline: "2px solid white",
                   }}
                   title={`Spend - Expected: $${data.expectedExpenses.toLocaleString()}, Actual: $${data.actualExpenses.toLocaleString()}`}
                 >
-                  <div className="absolute inset-0 bg-red-500/40 rounded-b-sm" />
                   <div
-                    className="absolute top-0 left-0 right-0 bg-red-600 rounded-b-sm transition-all"
+                    className="absolute top-0 left-0 right-0 bg-red-600 transition-all"
                     style={{ height: expExpenseHeight > 0 ? `${(data.actualExpenses / data.expectedExpenses) * 100}%` : 0 }}
                   />
                 </div>

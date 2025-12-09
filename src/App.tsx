@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
 import { addMonths, subMonths } from "date-fns"
 import { DndContext, DragEndEvent, pointerWithin, useSensor, useSensors, PointerSensor } from "@dnd-kit/core"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -189,33 +188,13 @@ export default function App() {
           setEditingItem(null)
           setShowAddModal(true)
         }}
+        dateRange={`${months[0]?.name} — ${months[months.length - 1]?.name}`}
+        onPrevious={loadPreviousMonths}
+        onNext={loadNextMonths}
+        onToday={goToToday}
       />
 
-      {showChart && <CashflowChart months={months} />}
-
-      <div className="flex items-center gap-2 mb-3">
-        <button
-          onClick={loadPreviousMonths}
-          className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <span className="text-[11px] text-muted-foreground">
-          {months[0]?.name} — {months[months.length - 1]?.name}
-        </span>
-        <button
-          onClick={loadNextMonths}
-          className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-        <button
-          onClick={goToToday}
-          className="ml-2 px-2 py-0.5 text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-        >
-          Today
-        </button>
-      </div>
+      {showChart && <CashflowChart months={months} startingBalance={startingBalance} />}
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
         <div className="flex gap-2 pb-4 overflow-x-auto">
