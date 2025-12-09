@@ -9,7 +9,6 @@ interface MonthColumnProps {
 	isFirstMonth?: boolean;
 	startingBalance?: number;
 	prevTotal: number;
-	maxAmount: number;
 	chartScale: number;
 	balanceScale: number;
 	onItemClick: (item: MonthItem) => void;
@@ -23,7 +22,6 @@ export function MonthColumn({
 	isFirstMonth,
 	startingBalance,
 	prevTotal,
-	maxAmount,
 	chartScale,
 	balanceScale,
 	onItemClick,
@@ -66,12 +64,6 @@ export function MonthColumn({
 			item.type === "entry" ? item.entry!.amount : item.plan!.expected_amount;
 		return (amount / 1000) * chartScale;
 	};
-
-	const totalIncomeHeight = useMemo(() => {
-		return incomeItems.reduce((sum, item) => {
-			return sum + getItemHeight(item) + ITEM_GAP;
-		}, 0);
-	}, [incomeItems, chartScale]);
 
 	const startingBalancePosition = useMemo(() => {
 		if (!startingBalance || startingBalance <= 0) return 0;

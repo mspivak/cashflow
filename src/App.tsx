@@ -89,20 +89,6 @@ export default function App() {
 		[monthIds, plans, entries, startingBalance]
 	);
 
-	const maxAmount = useMemo(() => {
-		let max = 0;
-		for (const month of months) {
-			for (const item of month.items) {
-				const amount =
-					item.type === "entry"
-						? item.entry!.amount
-						: item.plan!.expected_amount;
-				if (amount > max) max = amount;
-			}
-		}
-		return max;
-	}, [months]);
-
 	const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
 		if (data.plan && data.entry) {
 			createPlan.mutate(data.plan, {
@@ -247,7 +233,6 @@ export default function App() {
 								isFirstMonth={index === 0}
 								startingBalance={startingBalance}
 								prevTotal={prevTotal}
-								maxAmount={maxAmount}
 								chartScale={chartScale}
 								balanceScale={balanceScale}
 								onItemClick={handleItemClick}
