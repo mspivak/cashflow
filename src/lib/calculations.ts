@@ -38,10 +38,12 @@ export function buildMonthItems(
     monthItemsMap.set(monthId, [])
   }
 
-  const entriesByPlanAndMonth = new Map<string, Entry>()
+  const entriesByPlanAndMonth = new Map<string, Entry[]>()
   for (const entry of entries) {
     const key = `${entry.plan_id}-${entry.month_year}`
-    entriesByPlanAndMonth.set(key, entry)
+    const existing = entriesByPlanAndMonth.get(key) || []
+    existing.push(entry)
+    entriesByPlanAndMonth.set(key, existing)
   }
 
   for (const monthId of monthIds) {
@@ -49,28 +51,21 @@ export function buildMonthItems(
 
     for (const plan of plans) {
       const key = `${plan.id}-${monthId}`
-      const existingEntry = entriesByPlanAndMonth.get(key)
+      const planEntries = entriesByPlanAndMonth.get(key) || []
+      const expectedCount = plan.frequency === "biweekly" ? 2 : plan.frequency === "weekly" ? 4 : 1
 
-      if (existingEntry) {
+      for (const entry of planEntries) {
         items.push({
           type: "entry",
-          entry: existingEntry,
-          plan: existingEntry.plan,
+          entry,
+          plan: entry.plan,
           month_year: monthId,
         })
-      } else if (isPlanActiveInMonth(plan, monthId)) {
-        if (plan.frequency === "biweekly") {
-          items.push({
-            type: "expected",
-            plan,
-            month_year: monthId,
-          })
-          items.push({
-            type: "expected",
-            plan,
-            month_year: monthId,
-          })
-        } else {
+      }
+
+      if (isPlanActiveInMonth(plan, monthId)) {
+        const remainingExpected = expectedCount - planEntries.length
+        for (let i = 0; i < remainingExpected; i++) {
           items.push({
             type: "expected",
             plan,
@@ -94,6 +89,14 @@ export function buildMonthItems(
         })
       }
     }
+
+    items.sort((a, b) => {
+      const catA = a.type === "entry" ? a.entry!.plan.category : a.plan!.category
+      const catB = b.type === "entry" ? b.entry!.plan.category : b.plan!.category
+      if (catA.type === "income" && catB.type === "expense") return -1
+      if (catA.type === "expense" && catB.type === "income") return 1
+      return 0
+    })
 
     monthItemsMap.set(monthId, items)
   }
@@ -131,6 +134,21 @@ export function calculateBalances(
       const category = item.entry!.plan.category
       return sum + (category.type === "income" ? amount : -amount)
     }, 0)
+
+    let runningBalance = cumulativeExpected
+    for (const item of items) {
+      const amount = item.type === "entry"
+        ? item.entry!.amount
+        : item.plan!.expected_amount
+      const category = item.type === "entry"
+        ? item.entry!.plan.category
+        : item.plan!.category
+      const delta = category.type === "income" ? amount : -amount
+      runningBalance += delta
+      if (item.type === "expected" && category.type === "expense" && runningBalance < 0) {
+        item.wouldCauseDebt = true
+      }
+    }
 
     cumulativeExpected += expectedBalance
     cumulativeActual += actualBalance

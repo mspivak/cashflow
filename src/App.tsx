@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { addMonths, subMonths } from "date-fns"
+import { DndContext, DragEndEvent, pointerWithin, useSensor, useSensors, PointerSensor } from "@dnd-kit/core"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Header } from "@/components/header"
 import { MonthColumn } from "@/components/month-column"
@@ -43,7 +44,6 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [entryType, setEntryType] = useState<"income" | "expense">("income")
   const [editingItem, setEditingItem] = useState<MonthItem | null>(null)
-  const [editingPlanId, setEditingPlanId] = useState<string | null>(null)
 
   const { data: entries = [], isLoading: entriesLoading } = useEntries()
   const { data: categories = [], isLoading: categoriesLoading } = useCategories()
@@ -97,13 +97,12 @@ export default function App() {
     setEditingItem(null)
   }
 
-  const handleEditItem = (item: MonthItem) => {
+  const handleItemClick = (item: MonthItem) => {
     const category = item.type === "entry"
       ? item.entry!.plan.category
       : item.plan!.category
     setEntryType(category.type)
     setEditingItem(item)
-    setEditingPlanId(null)
     setShowAddModal(true)
   }
 
@@ -115,28 +114,27 @@ export default function App() {
     }
   }
 
-  const handleRecordEntry = (item: MonthItem) => {
-    if (item.type === "expected" && item.plan) {
-      setEntryType(item.plan.category.type)
-      setEditingItem(item)
-      setEditingPlanId(null)
-      setShowAddModal(true)
-    }
-  }
-
-  const handleEditPlan = (plan: Plan) => {
-    setEntryType(plan.category.type)
-    setEditingPlanId(plan.id)
-    setEditingItem(null)
-    setShowAddModal(true)
-  }
-
   const handleUpdatePlan = (id: string, data: PlanUpdate) => {
     updatePlan.mutate({ id, plan: data })
   }
 
   const handleUpdateSetting = (key: string, value: string) => {
     updateSetting.mutate({ key, value })
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over) return
+
+    const targetMonthId = over.id as string
+    const dragData = active.data.current as { item: MonthItem; plan: Plan }
+
+    if (dragData.item.month_year === targetMonthId) return
+
+    updatePlan.mutate({
+      id: dragData.plan.id,
+      plan: { start_month: targetMonthId },
+    })
   }
 
   const loadPreviousMonths = () => {
@@ -150,6 +148,14 @@ export default function App() {
   const goToToday = () => {
     setStartDate(new Date())
   }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  )
 
   const isLoading = entriesLoading || categoriesLoading || plansLoading || settingsLoading
 
@@ -176,13 +182,11 @@ export default function App() {
         onAddIncome={() => {
           setEntryType("income")
           setEditingItem(null)
-          setEditingPlanId(null)
           setShowAddModal(true)
         }}
         onAddSpend={() => {
           setEntryType("expense")
           setEditingItem(null)
-          setEditingPlanId(null)
           setShowAddModal(true)
         }}
       />
@@ -213,33 +217,31 @@ export default function App() {
         </button>
       </div>
 
-      <div className="flex gap-2 pb-4 overflow-x-auto">
-        {months.map((month) => (
-          <MonthColumn
-            key={month.id}
-            month={month}
-            isCurrentMonth={month.id === currentMonthId}
-            onEditItem={handleEditItem}
-            onDeleteItem={handleDeleteItem}
-            onRecordEntry={handleRecordEntry}
-            onEditPlan={handleEditPlan}
-          />
-        ))}
-      </div>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
+        <div className="flex gap-2 pb-4 overflow-x-auto">
+          {months.map((month, index) => (
+            <MonthColumn
+              key={month.id}
+              month={month}
+              isCurrentMonth={month.id === currentMonthId}
+              isFirstMonth={index === 0}
+              startingBalance={startingBalance}
+              onItemClick={handleItemClick}
+            />
+          ))}
+        </div>
+      </DndContext>
 
       <AddItemModal
         open={showAddModal}
         onOpenChange={(open) => {
           setShowAddModal(open)
-          if (!open) {
-            setEditingItem(null)
-            setEditingPlanId(null)
-          }
+          if (!open) setEditingItem(null)
         }}
         onSave={handleSave}
         onUpdatePlan={handleUpdatePlan}
+        onDelete={handleDeleteItem}
         editingItem={editingItem}
-        editingPlanId={editingPlanId}
         categories={categories}
         plans={plans}
         monthIds={monthIds}

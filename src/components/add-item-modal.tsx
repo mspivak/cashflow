@@ -24,8 +24,8 @@ interface AddItemModalProps {
   onOpenChange: (open: boolean) => void
   onSave: (data: { plan?: PlanCreate; entry?: EntryCreate }) => void
   onUpdatePlan: (id: string, data: PlanUpdate) => void
+  onDelete: (item: MonthItem) => void
   editingItem: MonthItem | null
-  editingPlanId: string | null
   categories: Category[]
   plans: Plan[]
   monthIds: string[]
@@ -38,8 +38,8 @@ export function AddItemModal({
   onOpenChange,
   onSave,
   onUpdatePlan,
+  onDelete,
   editingItem,
-  editingPlanId,
   categories,
   plans,
   monthIds,
@@ -62,6 +62,7 @@ export function AddItemModal({
   const [planCategoryId, setPlanCategoryId] = useState("")
   const [planExpectedAmount, setPlanExpectedAmount] = useState("")
   const [planFrequency, setPlanFrequency] = useState<Frequency>("one-time")
+  const [planEndMonth, setPlanEndMonth] = useState("")
 
   const filteredCategories = useMemo(
     () => categories.filter((c) => c.type === entryType),
@@ -74,12 +75,8 @@ export function AddItemModal({
 
   const isEditingEntry = editingItem?.type === "entry"
   const isRecordingExpected = editingItem?.type === "expected"
-  const isEditingPlanOnly = !!editingPlanId && !editingItem
 
   const currentPlan = useMemo(() => {
-    if (editingPlanId) {
-      return plans.find((p) => p.id === editingPlanId)
-    }
     if (isEditingEntry && editingItem?.entry) {
       return editingItem.entry.plan
     }
@@ -87,20 +84,14 @@ export function AddItemModal({
       return editingItem.plan
     }
     return null
-  }, [editingPlanId, editingItem, plans, isEditingEntry, isRecordingExpected])
+  }, [editingItem, isEditingEntry, isRecordingExpected])
 
   useEffect(() => {
     if (!open) return
 
     setShowPlanEdit(false)
 
-    if (isEditingPlanOnly && currentPlan) {
-      setPlanName(currentPlan.name)
-      setPlanCategoryId(currentPlan.category_id)
-      setPlanExpectedAmount(currentPlan.expected_amount.toString())
-      setPlanFrequency(currentPlan.frequency as Frequency)
-      setShowPlanEdit(true)
-    } else if (editingItem) {
+    if (editingItem) {
       if (isEditingEntry && editingItem.entry) {
         setMode("existing")
         setSelectedPlanId(editingItem.entry.plan_id)
@@ -112,6 +103,7 @@ export function AddItemModal({
         setPlanCategoryId(editingItem.entry.plan.category_id)
         setPlanExpectedAmount(editingItem.entry.plan.expected_amount.toString())
         setPlanFrequency(editingItem.entry.plan.frequency as Frequency)
+        setPlanEndMonth(editingItem.entry.plan.end_month || "")
       } else if (isRecordingExpected && editingItem.plan) {
         setMode("existing")
         setSelectedPlanId(editingItem.plan.id)
@@ -124,6 +116,7 @@ export function AddItemModal({
         setPlanCategoryId(editingItem.plan.category_id)
         setPlanExpectedAmount(editingItem.plan.expected_amount.toString())
         setPlanFrequency(editingItem.plan.frequency as Frequency)
+        setPlanEndMonth(editingItem.plan.end_month || "")
       }
     } else {
       setMode("new")
@@ -142,8 +135,22 @@ export function AddItemModal({
       setPlanCategoryId("")
       setPlanExpectedAmount("")
       setPlanFrequency("one-time")
+      setPlanEndMonth("")
     }
-  }, [open, editingItem, editingPlanId, currentMonthId, categories, entryType, isEditingEntry, isRecordingExpected, isEditingPlanOnly, currentPlan])
+  }, [open, editingItem, currentMonthId, categories, entryType, isEditingEntry, isRecordingExpected, currentPlan])
+
+  const handleSavePlanOnly = () => {
+    if (currentPlan) {
+      onUpdatePlan(currentPlan.id, {
+        name: planName,
+        category_id: planCategoryId,
+        expected_amount: parseFloat(planExpectedAmount),
+        frequency: planFrequency,
+        end_month: planEndMonth || undefined,
+      })
+    }
+    onOpenChange(false)
+  }
 
   const handleSave = () => {
     if (showPlanEdit && currentPlan) {
@@ -152,12 +159,8 @@ export function AddItemModal({
         category_id: planCategoryId,
         expected_amount: parseFloat(planExpectedAmount),
         frequency: planFrequency,
+        end_month: planEndMonth || undefined,
       })
-    }
-
-    if (isEditingPlanOnly) {
-      onOpenChange(false)
-      return
     }
 
     if (isEditingEntry) {
@@ -225,23 +228,19 @@ export function AddItemModal({
 
   const canSavePlan = planName && planCategoryId && planExpectedAmount && parseFloat(planExpectedAmount) > 0
 
-  const canSave = isEditingPlanOnly
-    ? canSavePlan
-    : isEditingEntry || isRecordingExpected
-      ? amount && parseFloat(amount) > 0 && (!showPlanEdit || canSavePlan)
-      : mode === "existing"
-        ? selectedPlanId && amount && parseFloat(amount) > 0
-        : name && categoryId && expectedAmount && parseFloat(expectedAmount) > 0 && (!recordNow || (amount && parseFloat(amount) > 0))
+  const canSave = isEditingEntry || isRecordingExpected
+    ? amount && parseFloat(amount) > 0 && (!showPlanEdit || canSavePlan)
+    : mode === "existing"
+      ? selectedPlanId && amount && parseFloat(amount) > 0
+      : name && categoryId && expectedAmount && parseFloat(expectedAmount) > 0 && (!recordNow || (amount && parseFloat(amount) > 0))
 
-  const title = isEditingPlanOnly
-    ? "Edit Plan"
-    : isEditingEntry
-      ? "Edit Entry"
-      : isRecordingExpected
-        ? "Record Entry"
-        : entryType === "income"
-          ? "Add Income"
-          : "Add Spend"
+  const title = isEditingEntry
+    ? "Edit Entry"
+    : isRecordingExpected
+      ? "Record Entry"
+      : entryType === "income"
+        ? "Add Income"
+        : "Add Spend"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -251,64 +250,7 @@ export function AddItemModal({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {isEditingPlanOnly ? (
-            <>
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input
-                  value={planName}
-                  onChange={(e) => setPlanName(e.target.value)}
-                  placeholder="e.g., Monthly Salary, Rent"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Select value={planCategoryId} onValueChange={setPlanCategoryId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredCategories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.icon} {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Expected Amount ($)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={planExpectedAmount}
-                    onChange={(e) => setPlanExpectedAmount(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Frequency</Label>
-                  <Select value={planFrequency} onValueChange={(v) => setPlanFrequency(v as Frequency)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="one-time">One-time</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="biweekly">Bi-weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              {!editingItem && (
+          {!editingItem && (
                 <div className="flex gap-2">
                   <Button
                     variant={mode === "new" ? "default" : "outline"}
@@ -417,6 +359,27 @@ export function AddItemModal({
                           </Select>
                         </div>
                       </div>
+                      {planFrequency !== "one-time" && (
+                        <div className="space-y-2">
+                          <Label className="text-xs">End Month (optional)</Label>
+                          <Select
+                            value={planEndMonth || "none"}
+                            onValueChange={(v) => setPlanEndMonth(v === "none" ? "" : v)}
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="No end date" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No end date</SelectItem>
+                              {monthIds.map((monthId) => (
+                                <SelectItem key={monthId} value={monthId}>
+                                  {formatMonthOption(monthId)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -457,7 +420,10 @@ export function AddItemModal({
                         min="0"
                         step="0.01"
                         value={expectedAmount}
-                        onChange={(e) => setExpectedAmount(e.target.value)}
+                        onChange={(e) => {
+                          setExpectedAmount(e.target.value)
+                          if (recordNow) setAmount(e.target.value)
+                        }}
                         placeholder="0.00"
                       />
                     </div>
@@ -544,17 +510,45 @@ export function AddItemModal({
                   </div>
                 </>
               )}
-            </>
-          )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={!canSave}>
-            {isEditingEntry ? "Update" : "Save"}
-          </Button>
+        <DialogFooter className="flex justify-between sm:justify-between">
+          {editingItem ? (
+            <Button
+              variant="destructive"
+              onClick={() => {
+                onDelete(editingItem)
+                onOpenChange(false)
+              }}
+            >
+              Delete
+            </Button>
+          ) : (
+            <div />
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            {isRecordingExpected ? (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={handleSavePlanOnly}
+                  disabled={!canSavePlan}
+                >
+                  Save Plan
+                </Button>
+                <Button onClick={handleSave} disabled={!canSave}>
+                  Record Payment
+                </Button>
+              </>
+            ) : (
+              <Button onClick={handleSave} disabled={!canSave}>
+                {isEditingEntry ? "Update" : "Save"}
+              </Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

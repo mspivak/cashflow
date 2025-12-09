@@ -84,6 +84,7 @@ export interface MonthItem {
   entry?: Entry
   plan?: Plan
   month_year: string
+  wouldCauseDebt?: boolean
 }
 
 export interface MonthData {
