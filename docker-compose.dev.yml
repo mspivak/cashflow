@@ -6,9 +6,6 @@ services:
       - "8000:8000"
     volumes:
       - ./api:/app
-    environment:
-      - TURSO_DATABASE_URL=libsql://cashflow-maurospi.aws-us-west-2.turso.io
-      - TURSO_AUTH_TOKEN=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjUyOTI0ODEsImlkIjoiN2MyZGUwNTktMGM3Mi00NTU1LTk3YzQtMTFhNjVmMjQzYmRjIiwicmlkIjoiMjUxZmE5MzgtMmU3NS00ZjQyLWFhYTgtOWNhMzI2ZTQwZWY0In0.HsPo829l6wJ31qgQQfKP9w0LKebvOUUIbqQ15TLeNfxe6PeEp_iuAM_FLp8Xt0vKCQNlCX12eOABZAAVzdJ0AQ
     command: >
       bash -c "pip install -q fastapi uvicorn &&
                uvicorn index:app --host 0.0.0.0 --port 8000 --reload"

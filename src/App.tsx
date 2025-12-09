@@ -1,31 +1,22 @@
 import { useState, useMemo } from "react"
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core"
-import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { addMonths, subMonths } from "date-fns"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Header } from "@/components/header"
 import { MonthColumn } from "@/components/month-column"
-import { ItemCard } from "@/components/item-card"
 import { AddItemModal } from "@/components/add-item-modal"
 import { SettingsModal } from "@/components/settings-modal"
 import { CashflowChart } from "@/components/cashflow-chart"
 import {
   useEntries,
   useCategories,
-  useRecurring,
+  usePlans,
   useSettings,
+  useCreatePlan,
   useCreateEntry,
   useUpdateEntry,
   useDeleteEntry,
-  useConfirmEntry,
+  useDeletePlan,
   useUpdateSetting,
 } from "@/hooks/use-items"
 import {
@@ -33,128 +24,99 @@ import {
   generateMonthRange,
   calculateBalances,
 } from "@/lib/calculations"
-import type { Entry, EntryCreate } from "@/types"
+import type { PlanCreate, EntryCreate, MonthItem } from "@/types"
 
 const MONTHS_PER_PAGE = 12
 
 export default function App() {
-  // Current month ID for highlighting
   const currentMonthId = useMemo(() => generateMonthId(new Date()), [])
 
-  // Month range state
   const [startDate, setStartDate] = useState(() => new Date())
   const monthIds = useMemo(
     () => generateMonthRange(generateMonthId(startDate), MONTHS_PER_PAGE),
     [startDate]
   )
 
-  // UI state
   const [showChart, setShowChart] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
-  const [editingEntry, setEditingEntry] = useState<Entry | null>(null)
-  const [activeEntry, setActiveEntry] = useState<Entry | null>(null)
   const [entryType, setEntryType] = useState<"income" | "expense">("income")
+  const [editingItem, setEditingItem] = useState<MonthItem | null>(null)
 
-  // Data fetching
   const { data: entries = [], isLoading: entriesLoading } = useEntries()
   const { data: categories = [], isLoading: categoriesLoading } = useCategories()
-  const { data: recurring = [], isLoading: recurringLoading } = useRecurring()
+  const { data: plans = [], isLoading: plansLoading } = usePlans()
   const { data: settings = [], isLoading: settingsLoading } = useSettings()
 
-  // Mutations
+  const createPlan = useCreatePlan()
   const createEntry = useCreateEntry()
   const updateEntry = useUpdateEntry()
   const deleteEntry = useDeleteEntry()
-  const confirmEntry = useConfirmEntry()
+  const deletePlan = useDeletePlan()
   const updateSetting = useUpdateSetting()
 
-  // Calculate starting balance
   const startingBalance = useMemo(() => {
     const setting = settings.find((s) => s.key === "starting_balance")
     return parseFloat(setting?.value || "0")
   }, [settings])
 
-  // Calculate month data with balances
   const months = useMemo(
-    () => calculateBalances(monthIds, entries, recurring, startingBalance),
-    [monthIds, entries, recurring, startingBalance]
+    () => calculateBalances(monthIds, plans, entries, startingBalance),
+    [monthIds, plans, entries, startingBalance]
   )
 
-  // Drag and drop sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  )
-
-  // Handlers
-  const handleDragStart = (event: DragStartEvent) => {
-    // Find entry in months
-    for (const month of months) {
-      const entry = month.entries.find((e) => e.id === event.active.id)
-      if (entry) {
-        setActiveEntry(entry)
-        break
-      }
-    }
-  }
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    setActiveEntry(null)
-    const { active, over } = event
-
-    if (!over) return
-
-    const entryId = active.id as string
-    const targetMonthId = over.id as string
-
-    // Don't allow dragging placeholder entries
-    if (entryId.startsWith("recurring-")) return
-
-    // Check if dropping on a month column
-    if (monthIds.includes(targetMonthId)) {
-      // Find the entry
-      for (const month of months) {
-        const entry = month.entries.find((e) => e.id === entryId)
-        if (entry && entry.month_year !== targetMonthId) {
-          updateEntry.mutate({
-            id: entryId,
-            entry: { month_year: targetMonthId },
+  const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
+    if (data.plan && data.entry) {
+      createPlan.mutate(data.plan, {
+        onSuccess: (newPlan) => {
+          createEntry.mutate({
+            ...data.entry!,
+            plan_id: newPlan.id,
           })
-          break
-        }
+        },
+      })
+    } else if (data.plan) {
+      createPlan.mutate(data.plan)
+    } else if (data.entry) {
+      if (editingItem?.type === "entry" && editingItem.entry) {
+        updateEntry.mutate({
+          id: editingItem.entry.id,
+          entry: {
+            amount: data.entry.amount,
+            date: data.entry.date,
+            notes: data.entry.notes,
+          },
+        })
+      } else {
+        createEntry.mutate(data.entry)
       }
     }
+    setEditingItem(null)
   }
 
-  const handleSaveEntry = (entryData: EntryCreate) => {
-    if (editingEntry) {
-      updateEntry.mutate({
-        id: editingEntry.id,
-        entry: entryData,
-      })
-    } else {
-      createEntry.mutate(entryData)
-    }
-    setEditingEntry(null)
-  }
-
-  const handleEditEntry = (entry: Entry) => {
-    const category = categories.find((c) => c.id === entry.category_id)
-    setEntryType(category?.type === "income" ? "income" : "expense")
-    setEditingEntry(entry)
+  const handleEditItem = (item: MonthItem) => {
+    const category = item.type === "entry"
+      ? item.entry!.plan.category
+      : item.plan!.category
+    setEntryType(category.type)
+    setEditingItem(item)
     setShowAddModal(true)
   }
 
-  const handleDeleteEntry = (entry: Entry) => {
-    deleteEntry.mutate(entry.id)
+  const handleDeleteItem = (item: MonthItem) => {
+    if (item.type === "entry" && item.entry) {
+      deleteEntry.mutate(item.entry.id)
+    } else if (item.type === "expected" && item.plan) {
+      deletePlan.mutate(item.plan.id)
+    }
   }
 
-  const handleConfirmEntry = (entry: Entry) => {
-    confirmEntry.mutate({ id: entry.id })
+  const handleRecordEntry = (item: MonthItem) => {
+    if (item.type === "expected" && item.plan) {
+      setEntryType(item.plan.category.type)
+      setEditingItem(item)
+      setShowAddModal(true)
+    }
   }
 
   const handleUpdateSetting = (key: string, value: string) => {
@@ -173,7 +135,7 @@ export default function App() {
     setStartDate(new Date())
   }
 
-  const isLoading = entriesLoading || categoriesLoading || recurringLoading || settingsLoading
+  const isLoading = entriesLoading || categoriesLoading || plansLoading || settingsLoading
 
   if (isLoading) {
     return (
@@ -197,19 +159,18 @@ export default function App() {
         onOpenSettings={() => setShowSettingsModal(true)}
         onAddIncome={() => {
           setEntryType("income")
-          setEditingEntry(null)
+          setEditingItem(null)
           setShowAddModal(true)
         }}
         onAddSpend={() => {
           setEntryType("expense")
-          setEditingEntry(null)
+          setEditingItem(null)
           setShowAddModal(true)
         }}
       />
 
       {showChart && <CashflowChart months={months} />}
 
-      {/* Timeline navigation */}
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={loadPreviousMonths}
@@ -234,47 +195,29 @@ export default function App() {
         </button>
       </div>
 
-      {/* Month columns */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex gap-2 pb-4">
-          {months.map((month) => (
-            <MonthColumn
-              key={month.id}
-              month={month}
-              isCurrentMonth={month.id === currentMonthId}
-              onEditEntry={handleEditEntry}
-              onDeleteEntry={handleDeleteEntry}
-              onConfirmEntry={handleConfirmEntry}
-            />
-          ))}
-        </div>
-
-        <DragOverlay>
-          {activeEntry ? (
-            <ItemCard
-              entry={activeEntry}
-              onEdit={() => {}}
-              onDelete={() => {}}
-              isDragging
-            />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+      <div className="flex gap-2 pb-4 overflow-x-auto">
+        {months.map((month) => (
+          <MonthColumn
+            key={month.id}
+            month={month}
+            isCurrentMonth={month.id === currentMonthId}
+            onEditItem={handleEditItem}
+            onDeleteItem={handleDeleteItem}
+            onRecordEntry={handleRecordEntry}
+          />
+        ))}
+      </div>
 
       <AddItemModal
         open={showAddModal}
         onOpenChange={(open) => {
           setShowAddModal(open)
-          if (!open) setEditingEntry(null)
+          if (!open) setEditingItem(null)
         }}
-        onSave={handleSaveEntry}
-        editingEntry={editingEntry}
+        onSave={handleSave}
+        editingItem={editingItem}
         categories={categories}
+        plans={plans}
         monthIds={monthIds}
         currentMonthId={monthIds[0]}
         entryType={entryType}

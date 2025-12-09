@@ -1,21 +1,15 @@
-import { useDroppable } from "@dnd-kit/core"
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { ItemCard } from "./item-card"
-import type { MonthData, Entry } from "@/types"
+import type { MonthData, MonthItem } from "@/types"
 
 interface MonthColumnProps {
   month: MonthData
   isCurrentMonth?: boolean
-  onEditEntry: (entry: Entry) => void
-  onDeleteEntry: (entry: Entry) => void
-  onConfirmEntry: (entry: Entry) => void
+  onEditItem: (item: MonthItem) => void
+  onDeleteItem: (item: MonthItem) => void
+  onRecordEntry: (item: MonthItem) => void
 }
 
-export function MonthColumn({ month, isCurrentMonth, onEditEntry, onDeleteEntry, onConfirmEntry }: MonthColumnProps) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: month.id,
-  })
-
+export function MonthColumn({ month, isCurrentMonth, onEditItem, onDeleteItem, onRecordEntry }: MonthColumnProps) {
   const hasActual = month.actualBalance !== 0
 
   const bgClass = isCurrentMonth
@@ -23,45 +17,33 @@ export function MonthColumn({ month, isCurrentMonth, onEditEntry, onDeleteEntry,
     : "bg-muted/30"
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`min-w-32 flex-1 flex flex-col ${bgClass} ${isOver ? "ring-1 ring-primary bg-muted/50" : ""}`}
-    >
-      {/* Header */}
+    <div className={`min-w-32 flex-1 flex flex-col ${bgClass}`}>
       <div className="px-1 py-1 border-b border-border/50">
         <div className="text-[10px] font-semibold text-center text-muted-foreground uppercase tracking-wide">
           {month.name}
         </div>
       </div>
 
-      {/* Entries */}
       <div className="flex-1">
-        <SortableContext
-          items={month.entries.map((e) => e.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="min-h-32">
-            {month.entries.map((entry) => (
-              <ItemCard
-                key={entry.id}
-                entry={entry}
-                onEdit={onEditEntry}
-                onDelete={onDeleteEntry}
-                onConfirm={onConfirmEntry}
-              />
-            ))}
-            {month.entries.length === 0 && (
-              <div className="text-center text-muted-foreground/50 py-6 text-[10px]">
-                Drop here
-              </div>
-            )}
-          </div>
-        </SortableContext>
+        <div className="min-h-32">
+          {month.items.map((item, index) => (
+            <ItemCard
+              key={item.type === "entry" ? item.entry!.id : `expected-${item.plan!.id}-${index}`}
+              item={item}
+              onEdit={onEditItem}
+              onDelete={onDeleteItem}
+              onRecord={onRecordEntry}
+            />
+          ))}
+          {month.items.length === 0 && (
+            <div className="text-center text-muted-foreground/50 py-6 text-[10px]">
+              No items
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Footer */}
       <div className="px-1 py-1 border-t border-border/50 bg-muted/20 space-y-0.5">
-        {/* Monthly balance */}
         <div className="flex justify-between text-[10px]">
           <span className="text-muted-foreground">Expected</span>
           <span
@@ -82,7 +64,6 @@ export function MonthColumn({ month, isCurrentMonth, onEditEntry, onDeleteEntry,
             </span>
           </div>
         )}
-        {/* Cumulative balance */}
         <div className="flex justify-between text-[11px] font-semibold border-t border-border/30 pt-0.5">
           <span className="text-muted-foreground">Total</span>
           <span

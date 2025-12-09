@@ -8,18 +8,31 @@ interface CashflowChartProps {
 export function CashflowChart({ months }: CashflowChartProps) {
   const chartData = useMemo(() => {
     return months.map((month) => {
-      const expectedIncome = month.entries
-        .filter((e) => e.category.type === "income")
-        .reduce((sum, e) => sum + (e.expected_amount ?? 0), 0)
-      const actualIncome = month.entries
-        .filter((e) => e.category.type === "income")
-        .reduce((sum, e) => sum + (e.actual_amount ?? 0), 0)
-      const expectedExpenses = month.entries
-        .filter((e) => e.category.type === "expense")
-        .reduce((sum, e) => sum + (e.expected_amount ?? 0), 0)
-      const actualExpenses = month.entries
-        .filter((e) => e.category.type === "expense")
-        .reduce((sum, e) => sum + (e.actual_amount ?? 0), 0)
+      let expectedIncome = 0
+      let actualIncome = 0
+      let expectedExpenses = 0
+      let actualExpenses = 0
+
+      for (const item of month.items) {
+        const category = item.type === "entry" ? item.entry!.plan.category : item.plan!.category
+        const amount = item.type === "entry" ? item.entry!.amount : item.plan!.expected_amount
+
+        if (item.type === "entry") {
+          if (category.type === "income") {
+            actualIncome += amount
+            expectedIncome += amount
+          } else {
+            actualExpenses += amount
+            expectedExpenses += amount
+          }
+        } else {
+          if (category.type === "income") {
+            expectedIncome += amount
+          } else {
+            expectedExpenses += amount
+          }
+        }
+      }
 
       return {
         expectedIncome,
@@ -32,7 +45,6 @@ export function CashflowChart({ months }: CashflowChartProps) {
     })
   }, [months])
 
-  // Calculate max values for scaling
   const maxIncome = Math.max(...chartData.map((d) => Math.max(d.expectedIncome, d.actualIncome)), 1)
   const maxExpense = Math.max(...chartData.map((d) => Math.max(d.expectedExpenses, d.actualExpenses)), 1)
   const maxCumulative = Math.max(
@@ -44,7 +56,6 @@ export function CashflowChart({ months }: CashflowChartProps) {
 
   return (
     <div className="mb-4">
-      {/* Legend */}
       <div className="flex gap-4 mb-2 text-[10px]">
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-sm bg-green-500/50" />
@@ -68,7 +79,6 @@ export function CashflowChart({ months }: CashflowChartProps) {
         </div>
       </div>
 
-      {/* Chart bars - aligned with columns */}
       <div className="flex gap-2" style={{ height: chartHeight }}>
         {chartData.map((data, i) => {
           const expIncomeHeight = (data.expectedIncome / maxIncome) * (chartHeight * 0.4)
@@ -82,31 +92,26 @@ export function CashflowChart({ months }: CashflowChartProps) {
               key={i}
               className="flex-1 min-w-32 relative flex items-end justify-center gap-0.5 bg-muted/20 rounded-sm"
             >
-              {/* Expected Income bar */}
               <div
                 className="w-1.5 bg-green-500/50 rounded-t-sm transition-all"
                 style={{ height: Math.max(expIncomeHeight, data.expectedIncome > 0 ? 2 : 0) }}
                 title={`Expected Income: $${data.expectedIncome.toLocaleString()}`}
               />
-              {/* Actual Income bar */}
               <div
                 className="w-1.5 bg-green-500 rounded-t-sm transition-all"
                 style={{ height: Math.max(actIncomeHeight, data.actualIncome > 0 ? 2 : 0) }}
                 title={`Actual Income: $${data.actualIncome.toLocaleString()}`}
               />
-              {/* Expected Expense bar */}
               <div
                 className="w-1.5 bg-red-500/50 rounded-t-sm transition-all"
                 style={{ height: Math.max(expExpenseHeight, data.expectedExpenses > 0 ? 2 : 0) }}
                 title={`Expected Expenses: $${data.expectedExpenses.toLocaleString()}`}
               />
-              {/* Actual Expense bar */}
               <div
                 className="w-1.5 bg-red-500 rounded-t-sm transition-all"
                 style={{ height: Math.max(actExpenseHeight, data.actualExpenses > 0 ? 2 : 0) }}
                 title={`Actual Expenses: $${data.actualExpenses.toLocaleString()}`}
               />
-              {/* Cumulative dot */}
               <div
                 className="absolute w-2 h-2 bg-amber-500 rounded-full border border-white shadow-sm transition-all"
                 style={{ top: cumulativeY, left: "50%", transform: "translateX(-50%)" }}

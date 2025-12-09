@@ -7,25 +7,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Database connection
 _raw_turso_url = os.getenv("TURSO_DATABASE_URL", "")
-# Convert libsql:// to https:// for HTTP-based connection (required for serverless)
 TURSO_DATABASE_URL = _raw_turso_url.replace("libsql://", "https://") if _raw_turso_url else ""
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
-# Local SQLite fallback path
 LOCAL_DB_PATH = "/tmp/cashflow.db"
 
-# Import libsql_client for Turso (required in production)
+libsql_client = None
 if TURSO_DATABASE_URL:
-    import libsql_client
+    try:
+        import libsql_client
+    except ImportError:
+        TURSO_DATABASE_URL = ""
 
 _db_initialized = False
 
 
 class Row(dict):
-    """Dict subclass that also supports index-based access like sqlite3.Row."""
-
     def __init__(self, columns, values):
         super().__init__(zip(columns, values))
         self._values = list(values)
@@ -37,8 +35,6 @@ class Row(dict):
 
 
 class DBWrapper:
-    """Wrapper to provide consistent interface for both sqlite3 and libsql."""
-
     def __init__(self, conn, is_turso=False):
         self.conn = conn
         self.is_turso = is_turso
@@ -51,7 +47,6 @@ class DBWrapper:
 
     def execute(self, sql, params=None):
         if self.is_turso:
-            # libsql uses ? placeholders like sqlite, so we're good
             if params:
                 result = self.conn.execute(sql, params)
             else:
@@ -90,11 +85,9 @@ class DBWrapper:
 
 
 def get_db():
-    """Get database connection (Turso in production, SQLite for local dev)."""
     global _db_initialized
 
     if TURSO_DATABASE_URL:
-        # Production: use Turso (fail loudly if misconfigured)
         if not TURSO_AUTH_TOKEN:
             raise RuntimeError("TURSO_AUTH_TOKEN is required when TURSO_DATABASE_URL is set")
         client = libsql_client.create_client_sync(
@@ -107,7 +100,6 @@ def get_db():
             _db_initialized = True
         return wrapper
     else:
-        # Local development only
         conn = sqlite3.connect(LOCAL_DB_PATH)
         conn.row_factory = sqlite3.Row
         wrapper = DBWrapper(conn, is_turso=False)
@@ -117,7 +109,6 @@ def get_db():
         return wrapper
 
 
-# Default categories to seed
 DEFAULT_CATEGORIES = [
     {"name": "Salary", "type": "income", "icon": "💼", "color": "#22c55e"},
     {"name": "Freelance", "type": "income", "icon": "💻", "color": "#10b981"},
@@ -133,10 +124,8 @@ DEFAULT_CATEGORIES = [
 
 
 def init_db_tables(conn):
-    """Initialize database tables and seed data."""
     cursor = conn.cursor()
 
-    # Create tables
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             id TEXT PRIMARY KEY,
@@ -148,17 +137,16 @@ def init_db_tables(conn):
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS entries (
+        CREATE TABLE IF NOT EXISTS plans (
             id TEXT PRIMARY KEY,
             category_id TEXT NOT NULL REFERENCES categories(id),
-            recurring_id TEXT,
             name TEXT NOT NULL,
-            month_year TEXT NOT NULL,
-            expected_amount REAL,
-            expected_date TEXT,
-            actual_amount REAL,
-            actual_date TEXT,
-            has_milestones INTEGER DEFAULT 0,
+            expected_amount REAL NOT NULL,
+            frequency TEXT NOT NULL CHECK(frequency IN ('one-time', 'weekly', 'biweekly', 'monthly')),
+            expected_day INTEGER,
+            start_month TEXT NOT NULL,
+            end_month TEXT,
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed')),
             notes TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -166,28 +154,13 @@ def init_db_tables(conn):
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS recurring (
+        CREATE TABLE IF NOT EXISTS entries (
             id TEXT PRIMARY KEY,
-            category_id TEXT NOT NULL REFERENCES categories(id),
-            name TEXT NOT NULL,
-            expected_amount REAL NOT NULL,
-            frequency TEXT NOT NULL CHECK(frequency IN ('weekly', 'biweekly', 'monthly')),
-            start_month TEXT NOT NULL,
-            end_month TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS milestones (
-            id TEXT PRIMARY KEY,
-            entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            expected_amount REAL,
-            expected_date TEXT,
-            actual_amount REAL,
-            actual_date TEXT,
-            sort_order INTEGER DEFAULT 0,
+            plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+            month_year TEXT NOT NULL,
+            amount REAL NOT NULL,
+            date TEXT,
+            notes TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -199,7 +172,6 @@ def init_db_tables(conn):
         )
     """)
 
-    # Seed default categories if empty
     cursor.execute("SELECT COUNT(*) FROM categories")
     count = cursor.fetchone()[0]
     if count == 0:
@@ -209,7 +181,6 @@ def init_db_tables(conn):
                 (str(uuid.uuid4()), cat["name"], cat["type"], cat["icon"], cat["color"])
             )
 
-    # Seed default setting if not exists
     cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'starting_balance'")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('starting_balance', '0')")
@@ -217,7 +188,6 @@ def init_db_tables(conn):
     conn.commit()
 
 
-# Pydantic models
 class CategoryBase(BaseModel):
     name: str
     type: str
@@ -227,64 +197,62 @@ class CategoryBase(BaseModel):
 class CategoryResponse(CategoryBase):
     id: str
 
-class EntryBase(BaseModel):
-    category_id: str
-    recurring_id: Optional[str] = None
-    name: str
-    month_year: str
-    expected_amount: Optional[float] = None
-    expected_date: Optional[str] = None
-    actual_amount: Optional[float] = None
-    actual_date: Optional[str] = None
-    has_milestones: bool = False
-    notes: Optional[str] = None
-
-class MilestoneBase(BaseModel):
-    name: str
-    expected_amount: Optional[float] = None
-    expected_date: Optional[str] = None
-    actual_amount: Optional[float] = None
-    actual_date: Optional[str] = None
-    sort_order: int = 0
-
-class MilestoneResponse(MilestoneBase):
-    id: str
-    entry_id: str
-    created_at: str
-
-class EntryCreate(EntryBase):
-    milestones: Optional[List[MilestoneBase]] = None
-
-class EntryResponse(EntryBase):
-    id: str
-    created_at: str
-    updated_at: str
-    category: CategoryResponse
-    milestones: List[MilestoneResponse] = []
-
-class RecurringBase(BaseModel):
+class PlanBase(BaseModel):
     category_id: str
     name: str
     expected_amount: float
     frequency: str
+    expected_day: Optional[int] = None
     start_month: str
     end_month: Optional[str] = None
+    notes: Optional[str] = None
 
-class RecurringResponse(RecurringBase):
+class PlanCreate(PlanBase):
+    pass
+
+class PlanUpdate(BaseModel):
+    category_id: Optional[str] = None
+    name: Optional[str] = None
+    expected_amount: Optional[float] = None
+    frequency: Optional[str] = None
+    expected_day: Optional[int] = None
+    start_month: Optional[str] = None
+    end_month: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+class PlanResponse(PlanBase):
+    id: str
+    status: str
+    created_at: str
+    updated_at: str
+    category: CategoryResponse
+
+class EntryBase(BaseModel):
+    plan_id: str
+    month_year: str
+    amount: float
+    date: Optional[str] = None
+    notes: Optional[str] = None
+
+class EntryCreate(EntryBase):
+    pass
+
+class EntryUpdate(BaseModel):
+    amount: Optional[float] = None
+    date: Optional[str] = None
+    notes: Optional[str] = None
+
+class EntryResponse(EntryBase):
     id: str
     created_at: str
-    category: CategoryResponse
+    plan: PlanResponse
 
 class SettingResponse(BaseModel):
     key: str
     value: str
 
-class EntryConfirm(BaseModel):
-    actual_amount: Optional[float] = None
-    actual_date: Optional[str] = None
 
-
-# FastAPI app
 app = FastAPI(title="Cashflow Tracker API")
 
 app.add_middleware(
@@ -296,7 +264,6 @@ app.add_middleware(
 )
 
 
-# Categories endpoints
 @app.get("/api/categories")
 def list_categories():
     conn = get_db()
@@ -321,48 +288,90 @@ def create_category(category: CategoryBase):
     return {"id": cat_id, **category.model_dump()}
 
 
-# Entries endpoints
-@app.get("/api/entries")
-def list_entries(from_month: Optional[str] = None, to_month: Optional[str] = None):
+def get_plan_by_id(plan_id: str, conn=None):
+    should_close = conn is None
+    if conn is None:
+        conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT p.id, p.category_id, p.name, p.expected_amount, p.frequency,
+           p.expected_day, p.start_month, p.end_month, p.status, p.notes,
+           p.created_at, p.updated_at,
+           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
+           FROM plans p JOIN categories c ON p.category_id = c.id
+           WHERE p.id = ?""",
+        (plan_id,)
+    )
+    row = cursor.fetchone()
+    if should_close:
+        conn.close()
+    if not row:
+        return None
+
+    return {
+        "id": row["id"],
+        "category_id": row["category_id"],
+        "name": row["name"],
+        "expected_amount": row["expected_amount"],
+        "frequency": row["frequency"],
+        "expected_day": row["expected_day"],
+        "start_month": row["start_month"],
+        "end_month": row["end_month"],
+        "status": row["status"],
+        "notes": row["notes"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "category": {
+            "id": row["cat_id"],
+            "name": row["cat_name"],
+            "type": row["cat_type"],
+            "icon": row["cat_icon"],
+            "color": row["cat_color"],
+        },
+    }
+
+
+@app.get("/api/plans")
+def list_plans(status: Optional[str] = None, category_id: Optional[str] = None):
     conn = get_db()
     cursor = conn.cursor()
 
     query = """
-        SELECT e.id, e.category_id, e.recurring_id, e.name, e.month_year,
-               e.expected_amount, e.expected_date, e.actual_amount, e.actual_date,
-               e.has_milestones, e.notes, e.created_at, e.updated_at,
+        SELECT p.id, p.category_id, p.name, p.expected_amount, p.frequency,
+               p.expected_day, p.start_month, p.end_month, p.status, p.notes,
+               p.created_at, p.updated_at,
                c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
-        FROM entries e
-        JOIN categories c ON e.category_id = c.id
+        FROM plans p
+        JOIN categories c ON p.category_id = c.id
         WHERE 1=1
     """
     params = []
 
-    if from_month:
-        query += " AND e.month_year >= ?"
-        params.append(from_month)
-    if to_month:
-        query += " AND e.month_year <= ?"
-        params.append(to_month)
+    if status:
+        query += " AND p.status = ?"
+        params.append(status)
+    if category_id:
+        query += " AND p.category_id = ?"
+        params.append(category_id)
 
-    query += " ORDER BY e.month_year, e.created_at"
+    query += " ORDER BY p.name"
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
+    conn.close()
 
-    entries = []
+    plans = []
     for row in rows:
-        entry = {
+        plans.append({
             "id": row["id"],
             "category_id": row["category_id"],
-            "recurring_id": row["recurring_id"],
             "name": row["name"],
-            "month_year": row["month_year"],
             "expected_amount": row["expected_amount"],
-            "expected_date": row["expected_date"],
-            "actual_amount": row["actual_amount"],
-            "actual_date": row["actual_date"],
-            "has_milestones": bool(row["has_milestones"]),
+            "frequency": row["frequency"],
+            "expected_day": row["expected_day"],
+            "start_month": row["start_month"],
+            "end_month": row["end_month"],
+            "status": row["status"],
             "notes": row["notes"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -373,21 +382,211 @@ def list_entries(from_month: Optional[str] = None, to_month: Optional[str] = Non
                 "icon": row["cat_icon"],
                 "color": row["cat_color"],
             },
-            "milestones": []
-        }
+        })
 
-        # Get milestones if entry has them
-        if entry["has_milestones"]:
-            cursor.execute(
-                "SELECT id, entry_id, name, expected_amount, expected_date, actual_amount, actual_date, sort_order, created_at FROM milestones WHERE entry_id = ? ORDER BY sort_order",
-                (entry["id"],)
-            )
-            for ms_row in cursor.fetchall():
-                entry["milestones"].append(dict(ms_row))
+    return plans
 
-        entries.append(entry)
 
+@app.post("/api/plans", status_code=201)
+def create_plan(plan: PlanCreate):
+    conn = get_db()
+    cursor = conn.cursor()
+    plan_id = str(uuid.uuid4())
+    now = date.today().isoformat()
+
+    cursor.execute(
+        """INSERT INTO plans (id, category_id, name, expected_amount, frequency,
+           expected_day, start_month, end_month, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)""",
+        (plan_id, plan.category_id, plan.name, plan.expected_amount, plan.frequency,
+         plan.expected_day, plan.start_month, plan.end_month, plan.notes, now, now)
+    )
+    conn.commit()
+    result = get_plan_by_id(plan_id, conn)
     conn.close()
+    return result
+
+
+@app.get("/api/plans/{plan_id}")
+def get_plan(plan_id: str):
+    plan = get_plan_by_id(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return plan
+
+
+@app.put("/api/plans/{plan_id}")
+def update_plan(plan_id: str, plan: PlanUpdate):
+    conn = get_db()
+    cursor = conn.cursor()
+    now = date.today().isoformat()
+
+    cursor.execute("SELECT id FROM plans WHERE id = ?", (plan_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    updates = []
+    params = []
+    data = plan.model_dump(exclude_unset=True)
+
+    for key, value in data.items():
+        updates.append(f"{key} = ?")
+        params.append(value)
+
+    if updates:
+        updates.append("updated_at = ?")
+        params.append(now)
+        params.append(plan_id)
+
+        cursor.execute(
+            f"UPDATE plans SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+
+    result = get_plan_by_id(plan_id, conn)
+    conn.close()
+    return result
+
+
+@app.delete("/api/plans/{plan_id}", status_code=204)
+def delete_plan(plan_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM plans WHERE id = ?", (plan_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    cursor.execute("DELETE FROM entries WHERE plan_id = ?", (plan_id,))
+    cursor.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_entry_by_id(entry_id: str, conn=None):
+    should_close = conn is None
+    if conn is None:
+        conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT e.id, e.plan_id, e.month_year, e.amount, e.date, e.notes, e.created_at,
+           p.id as plan_id, p.category_id, p.name as plan_name, p.expected_amount,
+           p.frequency, p.expected_day, p.start_month, p.end_month, p.status as plan_status,
+           p.notes as plan_notes, p.created_at as plan_created_at, p.updated_at as plan_updated_at,
+           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
+           FROM entries e
+           JOIN plans p ON e.plan_id = p.id
+           JOIN categories c ON p.category_id = c.id
+           WHERE e.id = ?""",
+        (entry_id,)
+    )
+    row = cursor.fetchone()
+    if should_close:
+        conn.close()
+    if not row:
+        return None
+
+    return {
+        "id": row["id"],
+        "plan_id": row["plan_id"],
+        "month_year": row["month_year"],
+        "amount": row["amount"],
+        "date": row["date"],
+        "notes": row["notes"],
+        "created_at": row["created_at"],
+        "plan": {
+            "id": row["plan_id"],
+            "category_id": row["category_id"],
+            "name": row["plan_name"],
+            "expected_amount": row["expected_amount"],
+            "frequency": row["frequency"],
+            "expected_day": row["expected_day"],
+            "start_month": row["start_month"],
+            "end_month": row["end_month"],
+            "status": row["plan_status"],
+            "notes": row["plan_notes"],
+            "created_at": row["plan_created_at"],
+            "updated_at": row["plan_updated_at"],
+            "category": {
+                "id": row["cat_id"],
+                "name": row["cat_name"],
+                "type": row["cat_type"],
+                "icon": row["cat_icon"],
+                "color": row["cat_color"],
+            },
+        },
+    }
+
+
+@app.get("/api/entries")
+def list_entries(from_month: Optional[str] = None, to_month: Optional[str] = None, plan_id: Optional[str] = None):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT e.id, e.plan_id, e.month_year, e.amount, e.date, e.notes, e.created_at,
+               p.id as p_id, p.category_id, p.name as plan_name, p.expected_amount,
+               p.frequency, p.expected_day, p.start_month, p.end_month, p.status as plan_status,
+               p.notes as plan_notes, p.created_at as plan_created_at, p.updated_at as plan_updated_at,
+               c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
+        FROM entries e
+        JOIN plans p ON e.plan_id = p.id
+        JOIN categories c ON p.category_id = c.id
+        WHERE 1=1
+    """
+    params = []
+
+    if from_month:
+        query += " AND e.month_year >= ?"
+        params.append(from_month)
+    if to_month:
+        query += " AND e.month_year <= ?"
+        params.append(to_month)
+    if plan_id:
+        query += " AND e.plan_id = ?"
+        params.append(plan_id)
+
+    query += " ORDER BY e.month_year, e.created_at"
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    entries = []
+    for row in rows:
+        entries.append({
+            "id": row["id"],
+            "plan_id": row["plan_id"],
+            "month_year": row["month_year"],
+            "amount": row["amount"],
+            "date": row["date"],
+            "notes": row["notes"],
+            "created_at": row["created_at"],
+            "plan": {
+                "id": row["p_id"],
+                "category_id": row["category_id"],
+                "name": row["plan_name"],
+                "expected_amount": row["expected_amount"],
+                "frequency": row["frequency"],
+                "expected_day": row["expected_day"],
+                "start_month": row["start_month"],
+                "end_month": row["end_month"],
+                "status": row["plan_status"],
+                "notes": row["plan_notes"],
+                "created_at": row["plan_created_at"],
+                "updated_at": row["plan_updated_at"],
+                "category": {
+                    "id": row["cat_id"],
+                    "name": row["cat_name"],
+                    "type": row["cat_type"],
+                    "icon": row["cat_icon"],
+                    "color": row["cat_color"],
+                },
+            },
+        })
+
     return entries
 
 
@@ -398,71 +597,28 @@ def create_entry(entry: EntryCreate):
     entry_id = str(uuid.uuid4())
     now = date.today().isoformat()
 
+    cursor.execute("SELECT id, frequency FROM plans WHERE id = ?", (entry.plan_id,))
+    plan_row = cursor.fetchone()
+    if not plan_row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Plan not found")
+
     cursor.execute(
-        """INSERT INTO entries (id, category_id, recurring_id, name, month_year,
-           expected_amount, expected_date, actual_amount, actual_date, has_milestones, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (entry_id, entry.category_id, entry.recurring_id, entry.name, entry.month_year,
-         entry.expected_amount, entry.expected_date, entry.actual_amount, entry.actual_date,
-         1 if entry.milestones else 0, entry.notes, now, now)
+        """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (entry_id, entry.plan_id, entry.month_year, entry.amount, entry.date, entry.notes, now)
     )
 
-    # Add milestones
-    if entry.milestones:
-        for i, ms in enumerate(entry.milestones):
-            cursor.execute(
-                """INSERT INTO milestones (id, entry_id, name, expected_amount, expected_date,
-                   actual_amount, actual_date, sort_order, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (str(uuid.uuid4()), entry_id, ms.name, ms.expected_amount, ms.expected_date,
-                 ms.actual_amount, ms.actual_date, ms.sort_order or i, now)
-            )
+    if plan_row["frequency"] == "one-time":
+        cursor.execute(
+            "UPDATE plans SET status = 'completed', updated_at = ? WHERE id = ?",
+            (now, entry.plan_id)
+        )
 
     conn.commit()
+    result = get_entry_by_id(entry_id, conn)
     conn.close()
-
-    # Fetch and return the created entry
-    return get_entry_by_id(entry_id)
-
-
-def get_entry_by_id(entry_id: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT e.id, e.category_id, e.recurring_id, e.name, e.month_year,
-           e.expected_amount, e.expected_date, e.actual_amount, e.actual_date,
-           e.has_milestones, e.notes, e.created_at, e.updated_at,
-           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
-           FROM entries e JOIN categories c ON e.category_id = c.id
-           WHERE e.id = ?""",
-        (entry_id,)
-    )
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return None
-
-    entry = {
-        "id": row["id"], "category_id": row["category_id"], "recurring_id": row["recurring_id"],
-        "name": row["name"], "month_year": row["month_year"], "expected_amount": row["expected_amount"],
-        "expected_date": row["expected_date"], "actual_amount": row["actual_amount"],
-        "actual_date": row["actual_date"], "has_milestones": bool(row["has_milestones"]),
-        "notes": row["notes"], "created_at": row["created_at"], "updated_at": row["updated_at"],
-        "category": {"id": row["cat_id"], "name": row["cat_name"], "type": row["cat_type"],
-                     "icon": row["cat_icon"], "color": row["cat_color"]},
-        "milestones": []
-    }
-
-    if entry["has_milestones"]:
-        cursor.execute(
-            "SELECT id, entry_id, name, expected_amount, expected_date, actual_amount, actual_date, sort_order, created_at FROM milestones WHERE entry_id = ?",
-            (entry_id,)
-        )
-        for ms_row in cursor.fetchall():
-            entry["milestones"].append(dict(ms_row))
-
-    conn.close()
-    return entry
+    return result
 
 
 @app.get("/api/entries/{entry_id}")
@@ -474,28 +630,34 @@ def get_entry(entry_id: str):
 
 
 @app.put("/api/entries/{entry_id}")
-def update_entry(entry_id: str, entry: EntryBase):
+def update_entry(entry_id: str, entry: EntryUpdate):
     conn = get_db()
     cursor = conn.cursor()
-    now = date.today().isoformat()
 
-    # Check if exists
     cursor.execute("SELECT id FROM entries WHERE id = ?", (entry_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    cursor.execute(
-        """UPDATE entries SET category_id=?, name=?, month_year=?, expected_amount=?,
-           expected_date=?, actual_amount=?, actual_date=?, notes=?, updated_at=?
-           WHERE id=?""",
-        (entry.category_id, entry.name, entry.month_year, entry.expected_amount,
-         entry.expected_date, entry.actual_amount, entry.actual_date, entry.notes, now, entry_id)
-    )
-    conn.commit()
-    conn.close()
+    updates = []
+    params = []
+    data = entry.model_dump(exclude_unset=True)
 
-    return get_entry_by_id(entry_id)
+    for key, value in data.items():
+        updates.append(f"{key} = ?")
+        params.append(value)
+
+    if updates:
+        params.append(entry_id)
+        cursor.execute(
+            f"UPDATE entries SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+
+    result = get_entry_by_id(entry_id, conn)
+    conn.close()
+    return result
 
 
 @app.delete("/api/entries/{entry_id}", status_code=204)
@@ -507,112 +669,11 @@ def delete_entry(entry_id: str):
         conn.close()
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    cursor.execute("DELETE FROM milestones WHERE entry_id = ?", (entry_id,))
     cursor.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
     conn.commit()
     conn.close()
 
 
-@app.post("/api/entries/{entry_id}/confirm")
-def confirm_entry(entry_id: str, confirm: EntryConfirm):
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT expected_amount FROM entries WHERE id = ?", (entry_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Entry not found")
-
-    actual_amount = confirm.actual_amount if confirm.actual_amount is not None else row["expected_amount"]
-    actual_date = confirm.actual_date or date.today().isoformat()
-
-    cursor.execute(
-        "UPDATE entries SET actual_amount=?, actual_date=?, updated_at=? WHERE id=?",
-        (actual_amount, actual_date, date.today().isoformat(), entry_id)
-    )
-    conn.commit()
-    conn.close()
-
-    return get_entry_by_id(entry_id)
-
-
-# Recurring endpoints
-@app.get("/api/recurring")
-def list_recurring():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT r.id, r.category_id, r.name, r.expected_amount, r.frequency,
-           r.start_month, r.end_month, r.created_at,
-           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
-           FROM recurring r JOIN categories c ON r.category_id = c.id
-           ORDER BY r.name"""
-    )
-
-    items = []
-    for row in cursor.fetchall():
-        items.append({
-            "id": row["id"], "category_id": row["category_id"], "name": row["name"],
-            "expected_amount": row["expected_amount"], "frequency": row["frequency"],
-            "start_month": row["start_month"], "end_month": row["end_month"], "created_at": row["created_at"],
-            "category": {"id": row["cat_id"], "name": row["cat_name"], "type": row["cat_type"],
-                        "icon": row["cat_icon"], "color": row["cat_color"]}
-        })
-    conn.close()
-    return items
-
-
-@app.post("/api/recurring", status_code=201)
-def create_recurring(recurring: RecurringBase):
-    conn = get_db()
-    cursor = conn.cursor()
-    rec_id = str(uuid.uuid4())
-    now = date.today().isoformat()
-
-    cursor.execute(
-        """INSERT INTO recurring (id, category_id, name, expected_amount, frequency, start_month, end_month, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (rec_id, recurring.category_id, recurring.name, recurring.expected_amount,
-         recurring.frequency, recurring.start_month, recurring.end_month, now)
-    )
-    conn.commit()
-
-    # Fetch with category
-    cursor.execute(
-        """SELECT r.id, r.category_id, r.name, r.expected_amount, r.frequency,
-           r.start_month, r.end_month, r.created_at,
-           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
-           FROM recurring r JOIN categories c ON r.category_id = c.id
-           WHERE r.id = ?""",
-        (rec_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    return {
-        "id": row["id"], "category_id": row["category_id"], "name": row["name"],
-        "expected_amount": row["expected_amount"], "frequency": row["frequency"],
-        "start_month": row["start_month"], "end_month": row["end_month"], "created_at": row["created_at"],
-        "category": {"id": row["cat_id"], "name": row["cat_name"], "type": row["cat_type"],
-                    "icon": row["cat_icon"], "color": row["cat_color"]}
-    }
-
-
-@app.delete("/api/recurring/{recurring_id}", status_code=204)
-def delete_recurring(recurring_id: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM recurring WHERE id = ?", (recurring_id,))
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Recurring not found")
-
-    cursor.execute("DELETE FROM recurring WHERE id = ?", (recurring_id,))
-    conn.commit()
-    conn.close()
-
-
-# Settings endpoints
 @app.get("/api/settings")
 def list_settings():
     conn = get_db()
@@ -627,7 +688,7 @@ def list_settings():
 def update_setting(key: str, setting: dict):
     conn = get_db()
     cursor = conn.cursor()
-    value = setting.get("value", "")
+    value = setting["value"]
 
     cursor.execute("SELECT key FROM settings WHERE key = ?", (key,))
     if cursor.fetchone():

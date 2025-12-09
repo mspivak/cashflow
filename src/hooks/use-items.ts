@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import * as api from "@/lib/api"
-import type { EntryCreate, EntryUpdate, RecurringCreate, Category } from "@/types"
+import type { PlanCreate, PlanUpdate, EntryCreate, EntryUpdate, Category } from "@/types"
 
-// Categories
 export function useCategories() {
   return useQuery({
     queryKey: ["categories"],
@@ -20,11 +19,49 @@ export function useCreateCategory() {
   })
 }
 
-// Entries
-export function useEntries(fromMonth?: string, toMonth?: string) {
+export function usePlans(status?: string, categoryId?: string) {
   return useQuery({
-    queryKey: ["entries", fromMonth, toMonth],
-    queryFn: () => api.fetchEntries(fromMonth, toMonth),
+    queryKey: ["plans", status, categoryId],
+    queryFn: () => api.fetchPlans(status, categoryId),
+  })
+}
+
+export function useCreatePlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (plan: PlanCreate) => api.createPlan(plan),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["plans"] })
+    },
+  })
+}
+
+export function useUpdatePlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, plan }: { id: string; plan: PlanUpdate }) =>
+      api.updatePlan(id, plan),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["plans"] })
+    },
+  })
+}
+
+export function useDeletePlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deletePlan(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["plans"] })
+      queryClient.invalidateQueries({ queryKey: ["entries"] })
+    },
+  })
+}
+
+export function useEntries(fromMonth?: string, toMonth?: string, planId?: string) {
+  return useQuery({
+    queryKey: ["entries", fromMonth, toMonth, planId],
+    queryFn: () => api.fetchEntries(fromMonth, toMonth, planId),
   })
 }
 
@@ -34,6 +71,7 @@ export function useCreateEntry() {
     mutationFn: (entry: EntryCreate) => api.createEntry(entry),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entries"] })
+      queryClient.invalidateQueries({ queryKey: ["plans"] })
     },
   })
 }
@@ -59,62 +97,6 @@ export function useDeleteEntry() {
   })
 }
 
-export function useConfirmEntry() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string
-      data?: { actual_amount?: number; actual_date?: string }
-    }) => api.confirmEntry(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["entries"] })
-    },
-  })
-}
-
-// Recurring
-export function useRecurring() {
-  return useQuery({
-    queryKey: ["recurring"],
-    queryFn: api.fetchRecurring,
-  })
-}
-
-export function useCreateRecurring() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (recurring: RecurringCreate) => api.createRecurring(recurring),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-    },
-  })
-}
-
-export function useUpdateRecurring() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, recurring }: { id: string; recurring: Partial<RecurringCreate> }) =>
-      api.updateRecurring(id, recurring),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-    },
-  })
-}
-
-export function useDeleteRecurring() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => api.deleteRecurring(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring"] })
-    },
-  })
-}
-
-// Settings
 export function useSettings() {
   return useQuery({
     queryKey: ["settings"],

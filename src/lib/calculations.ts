@@ -1,5 +1,5 @@
 import { format, addMonths, parse } from "date-fns"
-import type { Entry, MonthData, Recurring } from "@/types"
+import type { Entry, Plan, MonthData, MonthItem } from "@/types"
 
 export function generateMonthId(date: Date): string {
   return format(date, "yyyy-MM")
@@ -19,101 +19,117 @@ export function generateMonthRange(startMonth: string, count: number): string[] 
   return months
 }
 
-// Check if a recurring item is active in a given month
-function isRecurringActiveInMonth(recurring: Recurring, monthId: string): boolean {
-  if (monthId < recurring.start_month) return false
-  if (recurring.end_month && monthId > recurring.end_month) return false
+function isPlanActiveInMonth(plan: Plan, monthId: string): boolean {
+  if (plan.status === "completed") return false
+  if (monthId < plan.start_month) return false
+  if (plan.end_month && monthId > plan.end_month) return false
+  if (plan.frequency === "one-time" && monthId !== plan.start_month) return false
   return true
 }
 
-// Expand recurring templates into expected entries for display
-export function expandRecurringToEntries(
-  recurring: Recurring[],
+export function buildMonthItems(
+  plans: Plan[],
   entries: Entry[],
   monthIds: string[]
-): Entry[] {
-  const expanded: Entry[] = [...entries]
-  const existingKeys = new Set(
-    entries
-      .filter((e) => e.recurring_id)
-      .map((e) => `${e.recurring_id}-${e.month_year}`)
-  )
+): Map<string, MonthItem[]> {
+  const monthItemsMap = new Map<string, MonthItem[]>()
 
-  for (const rec of recurring) {
-    for (const monthId of monthIds) {
-      if (!isRecurringActiveInMonth(rec, monthId)) continue
-
-      const key = `${rec.id}-${monthId}`
-      if (existingKeys.has(key)) continue // Already have an entry for this
-
-      // Create a placeholder entry for this recurring item
-      const placeholderEntry: Entry = {
-        id: `recurring-${key}`,
-        category_id: rec.category_id,
-        recurring_id: rec.id,
-        name: rec.name,
-        month_year: monthId,
-        expected_amount: rec.expected_amount,
-        expected_date: undefined,
-        actual_amount: undefined,
-        actual_date: undefined,
-        has_milestones: false,
-        notes: undefined,
-        created_at: rec.created_at,
-        updated_at: rec.created_at,
-        category: rec.category,
-        milestones: [],
-      }
-
-      // For biweekly, add two entries
-      if (rec.frequency === "biweekly") {
-        expanded.push({
-          ...placeholderEntry,
-          id: `recurring-${key}-1`,
-          name: `${rec.name} (1st)`,
-        })
-        expanded.push({
-          ...placeholderEntry,
-          id: `recurring-${key}-2`,
-          name: `${rec.name} (2nd)`,
-        })
-      } else {
-        expanded.push(placeholderEntry)
-      }
-    }
+  for (const monthId of monthIds) {
+    monthItemsMap.set(monthId, [])
   }
 
-  return expanded
+  const entriesByPlanAndMonth = new Map<string, Entry>()
+  for (const entry of entries) {
+    const key = `${entry.plan_id}-${entry.month_year}`
+    entriesByPlanAndMonth.set(key, entry)
+  }
+
+  for (const monthId of monthIds) {
+    const items: MonthItem[] = []
+
+    for (const plan of plans) {
+      const key = `${plan.id}-${monthId}`
+      const existingEntry = entriesByPlanAndMonth.get(key)
+
+      if (existingEntry) {
+        items.push({
+          type: "entry",
+          entry: existingEntry,
+          plan: existingEntry.plan,
+          month_year: monthId,
+        })
+      } else if (isPlanActiveInMonth(plan, monthId)) {
+        if (plan.frequency === "biweekly") {
+          items.push({
+            type: "expected",
+            plan,
+            month_year: monthId,
+          })
+          items.push({
+            type: "expected",
+            plan,
+            month_year: monthId,
+          })
+        } else {
+          items.push({
+            type: "expected",
+            plan,
+            month_year: monthId,
+          })
+        }
+      }
+    }
+
+    const monthEntries = entries.filter((e) => e.month_year === monthId)
+    for (const entry of monthEntries) {
+      const alreadyAdded = items.some(
+        (item) => item.type === "entry" && item.entry?.id === entry.id
+      )
+      if (!alreadyAdded) {
+        items.push({
+          type: "entry",
+          entry,
+          plan: entry.plan,
+          month_year: monthId,
+        })
+      }
+    }
+
+    monthItemsMap.set(monthId, items)
+  }
+
+  return monthItemsMap
 }
 
-// Calculate balances for each month
 export function calculateBalances(
   monthIds: string[],
+  plans: Plan[],
   entries: Entry[],
-  recurring: Recurring[],
   startingBalance: number
 ): MonthData[] {
-  // Expand recurring items
-  const allEntries = expandRecurringToEntries(recurring, entries, monthIds)
+  const monthItemsMap = buildMonthItems(plans, entries, monthIds)
 
   let cumulativeExpected = startingBalance
   let cumulativeActual = startingBalance
 
   return monthIds.map((monthId) => {
-    const monthEntries = allEntries.filter((e) => e.month_year === monthId)
+    const items = monthItemsMap.get(monthId) || []
 
-    // Calculate expected balance (income - expenses)
-    const expectedBalance = monthEntries.reduce((sum, entry) => {
-      const amount = entry.expected_amount ?? 0
-      return sum + (entry.category.type === "income" ? amount : -amount)
+    const expectedBalance = items.reduce((sum, item) => {
+      const amount = item.type === "entry"
+        ? item.entry!.amount
+        : item.plan!.expected_amount
+      const category = item.type === "entry"
+        ? item.entry!.plan.category
+        : item.plan!.category
+      return sum + (category.type === "income" ? amount : -amount)
     }, 0)
 
-    // Calculate actual balance (only confirmed entries)
-    const actualBalance = monthEntries.reduce((sum, entry) => {
-      if (entry.actual_amount === undefined || entry.actual_amount === null) {
-        return sum
-      }
-      return sum + (entry.category.type === "income" ? entry.actual_amount : -entry.actual_amount)
+    const actualBalance = items.reduce((sum, item) => {
+      if (item.type !== "entry") return sum
+      const amount = item.entry!.amount
+      const category = item.entry!.plan.category
+      return sum + (category.type === "income" ? amount : -amount)
     }, 0)
 
     cumulativeExpected += expectedBalance
@@ -122,7 +138,7 @@ export function calculateBalances(
     return {
       id: monthId,
       name: formatMonthName(monthId),
-      entries: monthEntries,
+      items,
       expectedBalance,
       actualBalance,
       cumulativeExpected,
