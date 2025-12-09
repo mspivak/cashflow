@@ -25,16 +25,28 @@ export function SettingsModal({
   onSave,
 }: SettingsModalProps) {
   const [startingBalance, setStartingBalance] = useState("")
+  const [chartScale, setChartScale] = useState("40")
+  const [balanceScale, setBalanceScale] = useState("40")
 
   useEffect(() => {
     const balanceSetting = settings.find((s) => s.key === "starting_balance")
     if (balanceSetting) {
       setStartingBalance(balanceSetting.value)
     }
+    const scaleSetting = settings.find((s) => s.key === "chart_scale")
+    if (scaleSetting) {
+      setChartScale(scaleSetting.value)
+    }
+    const balanceScaleSetting = settings.find((s) => s.key === "balance_scale")
+    if (balanceScaleSetting) {
+      setBalanceScale(balanceScaleSetting.value)
+    }
   }, [settings])
 
   const handleSave = () => {
     onSave("starting_balance", startingBalance)
+    onSave("chart_scale", chartScale)
+    onSave("balance_scale", balanceScale)
     onOpenChange(false)
   }
 
@@ -59,6 +71,36 @@ export function SettingsModal({
             <p className="text-xs text-muted-foreground">
               Your current bank balance. Cumulative calculations will start from
               this amount.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="chart-scale">Chart Scale (px per $1000)</Label>
+            <Input
+              id="chart-scale"
+              type="number"
+              step="1"
+              min="1"
+              value={chartScale}
+              onChange={(e) => setChartScale(e.target.value)}
+              placeholder="40"
+            />
+            <p className="text-xs text-muted-foreground">
+              Height in pixels for each $1000. Higher values = taller bars.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="balance-scale">Balance Scale (px per $1000)</Label>
+            <Input
+              id="balance-scale"
+              type="number"
+              step="1"
+              min="1"
+              value={balanceScale}
+              onChange={(e) => setBalanceScale(e.target.value)}
+              placeholder="40"
+            />
+            <p className="text-xs text-muted-foreground">
+              Height in pixels for each $1000 of cumulative balance.
             </p>
           </div>
         </div>
