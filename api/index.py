@@ -11,22 +11,108 @@ from pydantic import BaseModel
 TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
-# Use in-memory or file-based SQLite for local/Vercel
-# Turso connection happens via HTTP in their client
+# Local SQLite fallback path
 LOCAL_DB_PATH = "/tmp/cashflow.db"
 
+# Import libsql_client for Turso (required in production)
+if TURSO_DATABASE_URL:
+    import libsql_client
 
 _db_initialized = False
 
+
+class Row(dict):
+    """Dict subclass that also supports index-based access like sqlite3.Row."""
+
+    def __init__(self, columns, values):
+        super().__init__(zip(columns, values))
+        self._values = list(values)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
+
+class DBWrapper:
+    """Wrapper to provide consistent interface for both sqlite3 and libsql."""
+
+    def __init__(self, conn, is_turso=False):
+        self.conn = conn
+        self.is_turso = is_turso
+        self._cursor = None
+
+    def cursor(self):
+        if self.is_turso:
+            return self
+        return self.conn.cursor()
+
+    def execute(self, sql, params=None):
+        if self.is_turso:
+            # libsql uses ? placeholders like sqlite, so we're good
+            if params:
+                result = self.conn.execute(sql, params)
+            else:
+                result = self.conn.execute(sql)
+            self._last_result = result
+            return self
+        else:
+            if self._cursor is None:
+                self._cursor = self.conn.cursor()
+            if params:
+                self._cursor.execute(sql, params)
+            else:
+                self._cursor.execute(sql)
+            return self._cursor
+
+    def fetchone(self):
+        if self.is_turso:
+            rows = self._last_result.rows
+            if rows:
+                return Row(self._last_result.columns, rows[0])
+            return None
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        if self.is_turso:
+            return [Row(self._last_result.columns, row) for row in self._last_result.rows]
+        return self._cursor.fetchall()
+
+    def commit(self):
+        if not self.is_turso:
+            self.conn.commit()
+
+    def close(self):
+        if not self.is_turso:
+            self.conn.close()
+
+
 def get_db():
-    """Get SQLite database connection."""
+    """Get database connection (Turso in production, SQLite for local dev)."""
     global _db_initialized
-    conn = sqlite3.connect(LOCAL_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    if not _db_initialized:
-        init_db_tables(conn)
-        _db_initialized = True
-    return conn
+
+    if TURSO_DATABASE_URL:
+        # Production: use Turso (fail loudly if misconfigured)
+        if not TURSO_AUTH_TOKEN:
+            raise RuntimeError("TURSO_AUTH_TOKEN is required when TURSO_DATABASE_URL is set")
+        client = libsql_client.create_client_sync(
+            url=TURSO_DATABASE_URL,
+            auth_token=TURSO_AUTH_TOKEN
+        )
+        wrapper = DBWrapper(client, is_turso=True)
+        if not _db_initialized:
+            init_db_tables(wrapper)
+            _db_initialized = True
+        return wrapper
+    else:
+        # Local development only
+        conn = sqlite3.connect(LOCAL_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        wrapper = DBWrapper(conn, is_turso=False)
+        if not _db_initialized:
+            init_db_tables(wrapper)
+            _db_initialized = True
+        return wrapper
 
 
 # Default categories to seed
