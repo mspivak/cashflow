@@ -6,7 +6,6 @@ import { Header } from "@/components/header"
 import { MonthColumn } from "@/components/month-column"
 import { AddItemModal } from "@/components/add-item-modal"
 import { SettingsModal } from "@/components/settings-modal"
-import { CashflowChart } from "@/components/cashflow-chart"
 import {
   useEntries,
   useCategories,
@@ -38,7 +37,6 @@ export default function App() {
     [startDate]
   )
 
-  const [showChart, setShowChart] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [entryType, setEntryType] = useState<"income" | "expense">("income")
@@ -66,6 +64,17 @@ export default function App() {
     () => calculateBalances(monthIds, plans, entries, startingBalance),
     [monthIds, plans, entries, startingBalance]
   )
+
+  const maxAmount = useMemo(() => {
+    let max = 0
+    for (const month of months) {
+      for (const item of month.items) {
+        const amount = item.type === "entry" ? item.entry!.amount : item.plan!.expected_amount
+        if (amount > max) max = amount
+      }
+    }
+    return max
+  }, [months])
 
   const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
     if (data.plan && data.entry) {
@@ -172,11 +181,9 @@ export default function App() {
   }
 
   return (
-    <div className="p-4 bg-background min-h-screen">
+    <div className="p-4 bg-background h-screen flex flex-col overflow-hidden">
       <Header
         startingBalance={startingBalance}
-        showChart={showChart}
-        onToggleChart={() => setShowChart(!showChart)}
         onOpenSettings={() => setShowSettingsModal(true)}
         onAddIncome={() => {
           setEntryType("income")
@@ -194,10 +201,8 @@ export default function App() {
         onToday={goToToday}
       />
 
-      {showChart && <CashflowChart months={months} startingBalance={startingBalance} />}
-
       <DndContext sensors={sensors} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
-        <div className="flex gap-2 pb-4 overflow-x-auto">
+        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden">
           {months.map((month, index) => (
             <MonthColumn
               key={month.id}
@@ -205,6 +210,7 @@ export default function App() {
               isCurrentMonth={month.id === currentMonthId}
               isFirstMonth={index === 0}
               startingBalance={startingBalance}
+              maxAmount={maxAmount}
               onItemClick={handleItemClick}
             />
           ))}

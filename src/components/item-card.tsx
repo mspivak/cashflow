@@ -6,9 +6,10 @@ interface ItemCardProps {
   item: MonthItem
   onClick: (item: MonthItem) => void
   itemIndex: number
+  height?: number
 }
 
-export function ItemCard({ item, onClick, itemIndex }: ItemCardProps) {
+export function ItemCard({ item, onClick, itemIndex, height }: ItemCardProps) {
   const isEntry = item.type === "entry"
   const plan = isEntry ? item.entry!.plan : item.plan!
   const category = plan.category
@@ -43,10 +44,11 @@ export function ItemCard({ item, onClick, itemIndex }: ItemCardProps) {
           color: isIncome ? "rgb(21, 128, 61)" : "rgb(185, 28, 28)",
         }
 
-  const style = {
+  const style: React.CSSProperties = {
     ...colorStyles,
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.5 : 1,
+    ...(height !== undefined && { height, minHeight: height }),
   }
 
   const handleClick = () => {
@@ -55,13 +57,15 @@ export function ItemCard({ item, onClick, itemIndex }: ItemCardProps) {
     }
   }
 
+  const hasProportionalHeight = height !== undefined
+
   return (
     <button
       ref={setNodeRef}
       type="button"
       onClick={handleClick}
       style={style}
-      className={`w-full text-left px-1.5 py-1 mt-px border-l-2 transition-all hover:opacity-80 ${isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${isDragging ? "z-50" : ""}`}
+      className={`w-full text-left px-1.5 border-l-2 transition-all hover:opacity-80 ${hasProportionalHeight ? "flex flex-col justify-center py-0.5" : "py-1 mt-px"} ${isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${isDragging ? "z-50" : ""}`}
       {...(isDraggable ? { ...attributes, ...listeners } : {})}
     >
       <div className="flex items-center gap-1">

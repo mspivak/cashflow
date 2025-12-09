@@ -1,10 +1,8 @@
-import { Plus, Settings, BarChart3, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Settings, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface HeaderProps {
   startingBalance: number
-  showChart: boolean
-  onToggleChart: () => void
   onOpenSettings: () => void
   onAddIncome: () => void
   onAddSpend: () => void
@@ -16,8 +14,6 @@ interface HeaderProps {
 
 export function Header({
   startingBalance,
-  showChart,
-  onToggleChart,
   onOpenSettings,
   onAddIncome,
   onAddSpend,
@@ -56,15 +52,6 @@ export function Header({
         </div>
       </div>
       <div className="flex gap-1.5">
-        <Button
-          variant={showChart ? "secondary" : "ghost"}
-          size="sm"
-          onClick={onToggleChart}
-          className="h-7 text-xs"
-        >
-          <BarChart3 className="h-3 w-3 mr-1" />
-          Chart
-        </Button>
         <Button variant="ghost" size="sm" onClick={onOpenSettings} className="h-7 text-xs">
           <Settings className="h-3 w-3 mr-1" />
           Settings

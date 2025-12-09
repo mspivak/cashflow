@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useDroppable } from "@dnd-kit/core"
 import { ItemCard } from "./item-card"
 import type { MonthData, MonthItem } from "@/types"
@@ -7,10 +8,14 @@ interface MonthColumnProps {
   isCurrentMonth?: boolean
   isFirstMonth?: boolean
   startingBalance?: number
+  maxAmount: number
   onItemClick: (item: MonthItem) => void
 }
 
-export function MonthColumn({ month, isCurrentMonth, isFirstMonth, startingBalance, onItemClick }: MonthColumnProps) {
+const MIN_ITEM_HEIGHT = 28
+const ITEM_GAP = 1
+
+export function MonthColumn({ month, isCurrentMonth, isFirstMonth, startingBalance, maxAmount, onItemClick }: MonthColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: month.id,
   })
@@ -23,33 +28,46 @@ export function MonthColumn({ month, isCurrentMonth, isFirstMonth, startingBalan
       ? "bg-blue-100 dark:bg-blue-900/30"
       : "bg-muted/30"
 
-  return (
-    <div className={`min-w-32 flex-1 flex flex-col transition-colors ${bgClass}`}>
-      <div className="px-1 py-1 border-b border-border/50">
-        <div className="text-[10px] font-semibold text-center text-muted-foreground uppercase tracking-wide">
-          {month.name}
-        </div>
-      </div>
+  const { incomeItems, expenseItems } = useMemo(() => {
+    const income: MonthItem[] = []
+    const expense: MonthItem[] = []
+    for (const item of month.items) {
+      const category = item.type === "entry" ? item.entry!.plan.category : item.plan!.category
+      if (category.type === "income") {
+        income.push(item)
+      } else {
+        expense.push(item)
+      }
+    }
+    return { incomeItems: income, expenseItems: expense }
+  }, [month.items])
 
-      <div ref={setNodeRef} className="flex-1">
-        <div className="min-h-32">
-          {month.items.map((item, index) => (
+  const getItemHeight = (item: MonthItem, availableHeight: number) => {
+    const amount = item.type === "entry" ? item.entry!.amount : item.plan!.expected_amount
+    if (maxAmount === 0) return MIN_ITEM_HEIGHT
+    const proportional = (amount / maxAmount) * availableHeight * 0.8
+    return Math.max(MIN_ITEM_HEIGHT, proportional)
+  }
+
+  return (
+    <div ref={setNodeRef} className={`min-w-32 flex-1 flex flex-col h-full transition-colors ${bgClass}`}>
+      <div className="flex-1 flex flex-col-reverse overflow-hidden">
+        {incomeItems.map((item, index) => (
+          <div key={item.type === "entry" ? item.entry!.id : `expected-${item.plan!.id}-${index}`} style={{ marginBottom: ITEM_GAP }}>
             <ItemCard
-              key={item.type === "entry" ? item.entry!.id : `expected-${item.plan!.id}-${index}`}
               item={item}
               onClick={onItemClick}
               itemIndex={index}
+              height={getItemHeight(item, 200)}
             />
-          ))}
-          {month.items.length === 0 && (
-            <div className="text-center text-muted-foreground/50 py-6 text-[10px]">
-              No items
-            </div>
-          )}
-        </div>
+          </div>
+        ))}
       </div>
 
-      <div className="px-1 py-1 border-t border-border/50 bg-muted/20 space-y-0.5">
+      <div className="px-1 py-1.5 border-y border-border/50 bg-muted/30 space-y-0.5 shrink-0">
+        <div className="text-[10px] font-semibold text-center text-muted-foreground uppercase tracking-wide mb-1">
+          {month.name}
+        </div>
         {isFirstMonth && startingBalance !== undefined && (
           <div className="flex justify-between text-[10px] border-b border-border/30 pb-0.5 mb-0.5">
             <span className="text-muted-foreground">Starting</span>
@@ -88,6 +106,19 @@ export function MonthColumn({ month, isCurrentMonth, isFirstMonth, startingBalan
             ${month.cumulativeExpected.toLocaleString()}
           </span>
         </div>
+      </div>
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {expenseItems.map((item, index) => (
+          <div key={item.type === "entry" ? item.entry!.id : `expected-${item.plan!.id}-${index}`} style={{ marginTop: ITEM_GAP }}>
+            <ItemCard
+              item={item}
+              onClick={onItemClick}
+              itemIndex={incomeItems.length + index}
+              height={getItemHeight(item, 200)}
+            />
+          </div>
+        ))}
       </div>
     </div>
   )
