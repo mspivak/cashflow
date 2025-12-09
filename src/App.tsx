@@ -38,6 +38,9 @@ import type { Entry, EntryCreate } from "@/types"
 const MONTHS_PER_PAGE = 12
 
 export default function App() {
+  // Current month ID for highlighting
+  const currentMonthId = useMemo(() => generateMonthId(new Date()), [])
+
   // Month range state
   const [startDate, setStartDate] = useState(() => new Date())
   const monthIds = useMemo(
@@ -51,6 +54,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null)
   const [activeEntry, setActiveEntry] = useState<Entry | null>(null)
+  const [entryType, setEntryType] = useState<"income" | "expense">("income")
 
   // Data fetching
   const { data: entries = [], isLoading: entriesLoading } = useEntries()
@@ -139,6 +143,8 @@ export default function App() {
   }
 
   const handleEditEntry = (entry: Entry) => {
+    const category = categories.find((c) => c.id === entry.category_id)
+    setEntryType(category?.type === "income" ? "income" : "expense")
     setEditingEntry(entry)
     setShowAddModal(true)
   }
@@ -163,6 +169,10 @@ export default function App() {
     setStartDate((d) => addMonths(d, MONTHS_PER_PAGE))
   }
 
+  const goToToday = () => {
+    setStartDate(new Date())
+  }
+
   const isLoading = entriesLoading || categoriesLoading || recurringLoading || settingsLoading
 
   if (isLoading) {
@@ -185,7 +195,13 @@ export default function App() {
         showChart={showChart}
         onToggleChart={() => setShowChart(!showChart)}
         onOpenSettings={() => setShowSettingsModal(true)}
-        onAddItem={() => {
+        onAddIncome={() => {
+          setEntryType("income")
+          setEditingEntry(null)
+          setShowAddModal(true)
+        }}
+        onAddSpend={() => {
+          setEntryType("expense")
           setEditingEntry(null)
           setShowAddModal(true)
         }}
@@ -210,6 +226,12 @@ export default function App() {
         >
           <ChevronRight className="h-4 w-4" />
         </button>
+        <button
+          onClick={goToToday}
+          className="ml-2 px-2 py-0.5 text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+        >
+          Today
+        </button>
       </div>
 
       {/* Month columns */}
@@ -224,6 +246,7 @@ export default function App() {
             <MonthColumn
               key={month.id}
               month={month}
+              isCurrentMonth={month.id === currentMonthId}
               onEditEntry={handleEditEntry}
               onDeleteEntry={handleDeleteEntry}
               onConfirmEntry={handleConfirmEntry}
@@ -254,6 +277,7 @@ export default function App() {
         categories={categories}
         monthIds={monthIds}
         currentMonthId={monthIds[0]}
+        entryType={entryType}
       />
 
       <SettingsModal

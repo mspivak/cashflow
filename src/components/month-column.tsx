@@ -5,22 +5,27 @@ import type { MonthData, Entry } from "@/types"
 
 interface MonthColumnProps {
   month: MonthData
+  isCurrentMonth?: boolean
   onEditEntry: (entry: Entry) => void
   onDeleteEntry: (entry: Entry) => void
   onConfirmEntry: (entry: Entry) => void
 }
 
-export function MonthColumn({ month, onEditEntry, onDeleteEntry, onConfirmEntry }: MonthColumnProps) {
+export function MonthColumn({ month, isCurrentMonth, onEditEntry, onDeleteEntry, onConfirmEntry }: MonthColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: month.id,
   })
 
   const hasActual = month.actualBalance !== 0
 
+  const bgClass = isCurrentMonth
+    ? "bg-blue-50 dark:bg-blue-950/30"
+    : "bg-muted/30"
+
   return (
     <div
       ref={setNodeRef}
-      className={`min-w-32 flex-1 flex flex-col bg-muted/30 ${isOver ? "ring-1 ring-primary bg-muted/50" : ""}`}
+      className={`min-w-32 flex-1 flex flex-col ${bgClass} ${isOver ? "ring-1 ring-primary bg-muted/50" : ""}`}
     >
       {/* Header */}
       <div className="px-1 py-1 border-b border-border/50">

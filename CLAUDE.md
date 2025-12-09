@@ -1,0 +1,1 @@
+- always use docker to run commands in this project

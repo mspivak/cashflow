@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Database connection
-TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
+_raw_turso_url = os.getenv("TURSO_DATABASE_URL", "")
+# Convert libsql:// to https:// for HTTP-based connection (required for serverless)
+TURSO_DATABASE_URL = _raw_turso_url.replace("libsql://", "https://") if _raw_turso_url else ""
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
 # Local SQLite fallback path

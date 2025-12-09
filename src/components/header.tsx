@@ -6,7 +6,8 @@ interface HeaderProps {
   showChart: boolean
   onToggleChart: () => void
   onOpenSettings: () => void
-  onAddItem: () => void
+  onAddIncome: () => void
+  onAddSpend: () => void
 }
 
 export function Header({
@@ -14,7 +15,8 @@ export function Header({
   showChart,
   onToggleChart,
   onOpenSettings,
-  onAddItem,
+  onAddIncome,
+  onAddSpend,
 }: HeaderProps) {
   return (
     <div className="flex items-center justify-between gap-4 mb-4">
@@ -38,9 +40,13 @@ export function Header({
           <Settings className="h-3 w-3 mr-1" />
           Settings
         </Button>
-        <Button size="sm" onClick={onAddItem} className="h-7 text-xs">
+        <Button size="sm" onClick={onAddIncome} className="h-7 text-xs bg-green-600 hover:bg-green-700">
           <Plus className="h-3 w-3 mr-1" />
-          Add
+          Income
+        </Button>
+        <Button size="sm" onClick={onAddSpend} className="h-7 text-xs bg-red-600 hover:bg-red-700">
+          <Plus className="h-3 w-3 mr-1" />
+          Spend
         </Button>
       </div>
     </div>

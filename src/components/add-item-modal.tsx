@@ -26,6 +26,7 @@ interface AddEntryModalProps {
   categories: Category[]
   monthIds: string[]
   currentMonthId: string
+  entryType: "income" | "expense"
 }
 
 export function AddItemModal({
@@ -36,6 +37,7 @@ export function AddItemModal({
   categories,
   monthIds,
   currentMonthId,
+  entryType,
 }: AddEntryModalProps) {
   const [name, setName] = useState("")
   const [categoryId, setCategoryId] = useState("")
@@ -45,6 +47,8 @@ export function AddItemModal({
   const [actualDate, setActualDate] = useState("")
   const [monthYear, setMonthYear] = useState(currentMonthId)
   const [notes, setNotes] = useState("")
+
+  const filteredCategories = categories.filter((c) => c.type === entryType)
 
   useEffect(() => {
     if (editingEntry) {
@@ -58,7 +62,7 @@ export function AddItemModal({
       setNotes(editingEntry.notes || "")
     } else {
       setName("")
-      setCategoryId(categories[0]?.id || "")
+      setCategoryId(filteredCategories[0]?.id || "")
       setExpectedAmount("")
       setActualAmount("")
       setExpectedDate("")
@@ -66,7 +70,7 @@ export function AddItemModal({
       setMonthYear(currentMonthId)
       setNotes("")
     }
-  }, [editingEntry, currentMonthId, categories])
+  }, [editingEntry, currentMonthId, filteredCategories, entryType])
 
   const handleSave = () => {
     if (!name || !categoryId) return
@@ -92,15 +96,14 @@ export function AddItemModal({
     return date.toLocaleDateString("en-US", { month: "short", year: "numeric" })
   }
 
-  const selectedCategory = categories.find((c) => c.id === categoryId)
-  const incomeCategories = categories.filter((c) => c.type === "income")
-  const expenseCategories = categories.filter((c) => c.type === "expense")
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{editingEntry ? "Edit Entry" : "Add New Entry"}</DialogTitle>
+          <DialogTitle>
+            {editingEntry ? "Edit Entry" : entryType === "income" ? "Add Income" : "Add Spend"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
@@ -112,30 +115,11 @@ export function AddItemModal({
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
-                {incomeCategories.length > 0 && (
-                  <>
-                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
-                      Income
-                    </div>
-                    {incomeCategories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.icon} {cat.name}
-                      </SelectItem>
-                    ))}
-                  </>
-                )}
-                {expenseCategories.length > 0 && (
-                  <>
-                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-1">
-                      Expense
-                    </div>
-                    {expenseCategories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.icon} {cat.name}
-                      </SelectItem>
-                    ))}
-                  </>
-                )}
+                {filteredCategories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.icon} {cat.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -229,26 +213,6 @@ export function AddItemModal({
             />
           </div>
 
-          {/* Info box */}
-          {selectedCategory && (
-            <div
-              className="rounded-lg p-3 text-sm"
-              style={{
-                backgroundColor: selectedCategory.type === "income"
-                  ? "rgba(34, 197, 94, 0.1)"
-                  : "rgba(239, 68, 68, 0.1)",
-                borderColor: selectedCategory.type === "income"
-                  ? "rgb(34, 197, 94)"
-                  : "rgb(239, 68, 68)",
-                borderWidth: 1,
-              }}
-            >
-              <p className={selectedCategory.type === "income" ? "text-green-700" : "text-red-700"}>
-                This will be recorded as {selectedCategory.type === "income" ? "an income" : "an expense"}.
-                {!expectedAmount && !actualAmount && " Enter at least expected or actual amount."}
-              </p>
-            </div>
-          )}
         </div>
 
         <DialogFooter>
