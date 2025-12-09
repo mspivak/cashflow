@@ -17,6 +17,7 @@ import {
   useUpdateEntry,
   useDeleteEntry,
   useDeletePlan,
+  useUpdatePlan,
   useUpdateSetting,
 } from "@/hooks/use-items"
 import {
@@ -24,7 +25,7 @@ import {
   generateMonthRange,
   calculateBalances,
 } from "@/lib/calculations"
-import type { PlanCreate, EntryCreate, MonthItem } from "@/types"
+import type { Plan, PlanCreate, PlanUpdate, EntryCreate, MonthItem } from "@/types"
 
 const MONTHS_PER_PAGE = 12
 
@@ -42,6 +43,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [entryType, setEntryType] = useState<"income" | "expense">("income")
   const [editingItem, setEditingItem] = useState<MonthItem | null>(null)
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null)
 
   const { data: entries = [], isLoading: entriesLoading } = useEntries()
   const { data: categories = [], isLoading: categoriesLoading } = useCategories()
@@ -53,6 +55,7 @@ export default function App() {
   const updateEntry = useUpdateEntry()
   const deleteEntry = useDeleteEntry()
   const deletePlan = useDeletePlan()
+  const updatePlan = useUpdatePlan()
   const updateSetting = useUpdateSetting()
 
   const startingBalance = useMemo(() => {
@@ -100,6 +103,7 @@ export default function App() {
       : item.plan!.category
     setEntryType(category.type)
     setEditingItem(item)
+    setEditingPlanId(null)
     setShowAddModal(true)
   }
 
@@ -115,8 +119,20 @@ export default function App() {
     if (item.type === "expected" && item.plan) {
       setEntryType(item.plan.category.type)
       setEditingItem(item)
+      setEditingPlanId(null)
       setShowAddModal(true)
     }
+  }
+
+  const handleEditPlan = (plan: Plan) => {
+    setEntryType(plan.category.type)
+    setEditingPlanId(plan.id)
+    setEditingItem(null)
+    setShowAddModal(true)
+  }
+
+  const handleUpdatePlan = (id: string, data: PlanUpdate) => {
+    updatePlan.mutate({ id, plan: data })
   }
 
   const handleUpdateSetting = (key: string, value: string) => {
@@ -160,11 +176,13 @@ export default function App() {
         onAddIncome={() => {
           setEntryType("income")
           setEditingItem(null)
+          setEditingPlanId(null)
           setShowAddModal(true)
         }}
         onAddSpend={() => {
           setEntryType("expense")
           setEditingItem(null)
+          setEditingPlanId(null)
           setShowAddModal(true)
         }}
       />
@@ -204,6 +222,7 @@ export default function App() {
             onEditItem={handleEditItem}
             onDeleteItem={handleDeleteItem}
             onRecordEntry={handleRecordEntry}
+            onEditPlan={handleEditPlan}
           />
         ))}
       </div>
@@ -212,10 +231,15 @@ export default function App() {
         open={showAddModal}
         onOpenChange={(open) => {
           setShowAddModal(open)
-          if (!open) setEditingItem(null)
+          if (!open) {
+            setEditingItem(null)
+            setEditingPlanId(null)
+          }
         }}
         onSave={handleSave}
+        onUpdatePlan={handleUpdatePlan}
         editingItem={editingItem}
+        editingPlanId={editingPlanId}
         categories={categories}
         plans={plans}
         monthIds={monthIds}

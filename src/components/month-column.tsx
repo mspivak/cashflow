@@ -1,5 +1,5 @@
 import { ItemCard } from "./item-card"
-import type { MonthData, MonthItem } from "@/types"
+import type { MonthData, MonthItem, Plan } from "@/types"
 
 interface MonthColumnProps {
   month: MonthData
@@ -7,9 +7,10 @@ interface MonthColumnProps {
   onEditItem: (item: MonthItem) => void
   onDeleteItem: (item: MonthItem) => void
   onRecordEntry: (item: MonthItem) => void
+  onEditPlan: (plan: Plan) => void
 }
 
-export function MonthColumn({ month, isCurrentMonth, onEditItem, onDeleteItem, onRecordEntry }: MonthColumnProps) {
+export function MonthColumn({ month, isCurrentMonth, onEditItem, onDeleteItem, onRecordEntry, onEditPlan }: MonthColumnProps) {
   const hasActual = month.actualBalance !== 0
 
   const bgClass = isCurrentMonth
@@ -33,6 +34,7 @@ export function MonthColumn({ month, isCurrentMonth, onEditItem, onDeleteItem, o
               onEdit={onEditItem}
               onDelete={onDeleteItem}
               onRecord={onRecordEntry}
+              onEditPlan={onEditPlan}
             />
           ))}
           {month.items.length === 0 && (

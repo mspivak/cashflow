@@ -1,14 +1,15 @@
-import { Edit2, X, Check } from "lucide-react"
-import type { MonthItem } from "@/types"
+import { Edit2, X, Check, Settings2 } from "lucide-react"
+import type { MonthItem, Plan } from "@/types"
 
 interface ItemCardProps {
   item: MonthItem
   onEdit: (item: MonthItem) => void
   onDelete: (item: MonthItem) => void
   onRecord: (item: MonthItem) => void
+  onEditPlan: (plan: Plan) => void
 }
 
-export function ItemCard({ item, onEdit, onDelete, onRecord }: ItemCardProps) {
+export function ItemCard({ item, onEdit, onDelete, onRecord, onEditPlan }: ItemCardProps) {
   const isEntry = item.type === "entry"
   const plan = isEntry ? item.entry!.plan : item.plan!
   const category = plan.category
@@ -63,11 +64,22 @@ export function ItemCard({ item, onEdit, onDelete, onRecord }: ItemCardProps) {
           )}
           <button
             type="button"
-            onClick={() => onEdit(item)}
-            className="p-0.5 opacity-40 hover:opacity-100 transition-opacity"
+            onClick={() => onEditPlan(plan)}
+            className="p-0.5 opacity-40 hover:opacity-100 hover:text-blue-600 transition-opacity"
+            title="Edit Plan"
           >
-            <Edit2 size={10} />
+            <Settings2 size={10} />
           </button>
+          {isEntry && (
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              className="p-0.5 opacity-40 hover:opacity-100 transition-opacity"
+              title="Edit Entry"
+            >
+              <Edit2 size={10} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onDelete(item)}

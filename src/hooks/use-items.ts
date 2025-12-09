@@ -43,6 +43,7 @@ export function useUpdatePlan() {
       api.updatePlan(id, plan),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["plans"] })
+      queryClient.invalidateQueries({ queryKey: ["entries"] })
     },
   })
 }
