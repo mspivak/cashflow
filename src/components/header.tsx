@@ -60,7 +60,7 @@ export function Header({
           <Plus className="h-3 w-3 mr-1" />
           Income
         </Button>
-        <Button size="sm" onClick={onAddSpend} className="h-7 text-xs bg-red-600 hover:bg-red-700">
+        <Button size="sm" onClick={onAddSpend} className="h-7 text-xs bg-gray-600 hover:bg-gray-700">
           <Plus className="h-3 w-3 mr-1" />
           Spend
         </Button>

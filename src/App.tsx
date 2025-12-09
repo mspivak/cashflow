@@ -60,6 +60,16 @@ export default function App() {
     return parseFloat(setting?.value || "0")
   }, [settings])
 
+  const chartScale = useMemo(() => {
+    const setting = settings.find((s) => s.key === "chart_scale")
+    return parseFloat(setting?.value || "40")
+  }, [settings])
+
+  const balanceScale = useMemo(() => {
+    const setting = settings.find((s) => s.key === "balance_scale")
+    return parseFloat(setting?.value || "40")
+  }, [settings])
+
   const months = useMemo(
     () => calculateBalances(monthIds, plans, entries, startingBalance),
     [monthIds, plans, entries, startingBalance]
@@ -202,18 +212,24 @@ export default function App() {
       />
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
-        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-hidden">
-          {months.map((month, index) => (
-            <MonthColumn
-              key={month.id}
-              month={month}
-              isCurrentMonth={month.id === currentMonthId}
-              isFirstMonth={index === 0}
-              startingBalance={startingBalance}
-              maxAmount={maxAmount}
-              onItemClick={handleItemClick}
-            />
-          ))}
+        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-auto pl-6 scrollbar-hide">
+          {months.map((month, index) => {
+            const prevTotal = index === 0 ? startingBalance : months[index - 1].cumulativeExpected
+            return (
+              <MonthColumn
+                key={month.id}
+                month={month}
+                isCurrentMonth={month.id === currentMonthId}
+                isFirstMonth={index === 0}
+                startingBalance={startingBalance}
+                prevTotal={prevTotal}
+                maxAmount={maxAmount}
+                chartScale={chartScale}
+                balanceScale={balanceScale}
+                onItemClick={handleItemClick}
+              />
+            )
+          })}
         </div>
       </DndContext>
 
