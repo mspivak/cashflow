@@ -47,12 +47,19 @@ export function CashflowChart({ months }: CashflowChartProps) {
 
   const maxIncome = Math.max(...chartData.map((d) => Math.max(d.expectedIncome, d.actualIncome)), 1)
   const maxExpense = Math.max(...chartData.map((d) => Math.max(d.expectedExpenses, d.actualExpenses)), 1)
-  const maxCumulative = Math.max(
-    ...chartData.map((d) => Math.max(Math.abs(d.cumulativeExpected), Math.abs(d.cumulativeActual))),
+  const maxBarValue = Math.max(maxIncome, maxExpense)
+
+  const maxAbsCumulative = Math.max(
+    ...chartData.map((d) => Math.abs(d.cumulativeExpected)),
     1
   )
 
   const chartHeight = 120
+  const zeroY = chartHeight / 2
+
+  const getCumulativeY = (value: number) => {
+    return zeroY - (value / maxAbsCumulative) * (zeroY - 8)
+  }
 
   return (
     <div className="mb-4">
@@ -72,6 +79,17 @@ export function CashflowChart({ months }: CashflowChartProps) {
       </div>
 
       <div className="relative" style={{ height: chartHeight }}>
+        <div
+          className="absolute left-0 right-0 border-t border-dashed border-muted-foreground/30"
+          style={{ top: zeroY }}
+        />
+        <span
+          className="absolute text-[9px] text-muted-foreground/50"
+          style={{ top: zeroY - 5, left: 2 }}
+        >
+          0
+        </span>
+
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none z-10"
           viewBox={`0 0 100 ${chartHeight}`}
@@ -84,27 +102,33 @@ export function CashflowChart({ months }: CashflowChartProps) {
             vectorEffect="non-scaling-stroke"
             points={chartData
               .map((data, i) => {
-                const x = (i + 0.5) / chartData.length * 100
-                const y = ((maxCumulative - data.cumulativeExpected) / (maxCumulative * 2)) * chartHeight + 4
+                const x = ((i + 0.5) / chartData.length) * 100
+                const y = getCumulativeY(data.cumulativeExpected)
                 return `${x},${y}`
               })
               .join(" ")}
           />
         </svg>
+
         <div className="flex gap-2 h-full">
           {chartData.map((data, i) => {
-            const maxValue = Math.max(maxIncome, maxExpense)
-            const expIncomeHeight = (data.expectedIncome / maxValue) * (chartHeight * 0.9)
-            const expExpenseHeight = (data.expectedExpenses / maxValue) * (chartHeight * 0.9)
+            const barAreaHeight = zeroY - 8
+            const expIncomeHeight = (data.expectedIncome / maxBarValue) * barAreaHeight
+            const expExpenseHeight = (data.expectedExpenses / maxBarValue) * barAreaHeight
 
             return (
               <div
                 key={i}
-                className="flex-1 min-w-32 relative flex items-end justify-center gap-2 bg-muted/20 rounded-sm"
+                className="flex-1 min-w-32 relative bg-muted/20 rounded-sm"
               >
                 <div
-                  className="w-4 relative rounded-t-sm transition-all"
-                  style={{ height: Math.max(expIncomeHeight, data.expectedIncome > 0 ? 2 : 0) }}
+                  className="absolute w-6 rounded-t-sm transition-all"
+                  style={{
+                    bottom: chartHeight - zeroY,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    height: Math.max(expIncomeHeight, data.expectedIncome > 0 ? 2 : 0),
+                  }}
                   title={`Income - Expected: $${data.expectedIncome.toLocaleString()}, Actual: $${data.actualIncome.toLocaleString()}`}
                 >
                   <div className="absolute inset-0 bg-green-500/40 rounded-t-sm" />
@@ -114,20 +138,25 @@ export function CashflowChart({ months }: CashflowChartProps) {
                   />
                 </div>
                 <div
-                  className="w-4 relative rounded-t-sm transition-all"
-                  style={{ height: Math.max(expExpenseHeight, data.expectedExpenses > 0 ? 2 : 0) }}
+                  className="absolute w-6 rounded-b-sm transition-all"
+                  style={{
+                    top: zeroY,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    height: Math.max(expExpenseHeight, data.expectedExpenses > 0 ? 2 : 0),
+                  }}
                   title={`Spend - Expected: $${data.expectedExpenses.toLocaleString()}, Actual: $${data.actualExpenses.toLocaleString()}`}
                 >
-                  <div className="absolute inset-0 bg-red-500/40 rounded-t-sm" />
+                  <div className="absolute inset-0 bg-red-500/40 rounded-b-sm" />
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-red-600 rounded-t-sm transition-all"
+                    className="absolute top-0 left-0 right-0 bg-red-600 rounded-b-sm transition-all"
                     style={{ height: expExpenseHeight > 0 ? `${(data.actualExpenses / data.expectedExpenses) * 100}%` : 0 }}
                   />
                 </div>
                 <div
                   className="absolute w-2 h-2 bg-amber-500 rounded-full border border-white shadow-sm transition-all z-20"
                   style={{
-                    top: ((maxCumulative - data.cumulativeExpected) / (maxCumulative * 2)) * chartHeight,
+                    top: getCumulativeY(data.cumulativeExpected) - 4,
                     left: "50%",
                     transform: "translateX(-50%)",
                   }}
