@@ -119,91 +119,107 @@ export function MonthColumn({
 		<div
 			ref={(node) => {
 				setNodeRef(node);
-				(containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+				(
+					containerRef as React.MutableRefObject<HTMLDivElement | null>
+				).current = node;
 			}}
 			className={`min-w-32 flex-1 flex flex-col h-full transition-colors ${bgClass} relative`}
 		>
-			{containerHeight > 0 && containerWidth > 0 && (() => {
-				const sectionHeight = (containerHeight - CENTER_HEIGHT) / 2;
-				const incomeBaseY = sectionHeight;
-				const expenseBaseY = sectionHeight + CENTER_HEIGHT;
-				const x1 = -(GAP / 2);
-				const x2 = containerWidth + (GAP / 2);
+			{containerHeight > 0 &&
+				containerWidth > 0 &&
+				(() => {
+					const sectionHeight = (containerHeight - CENTER_HEIGHT) / 2;
+					const incomeBaseY = sectionHeight;
+					const expenseBaseY = sectionHeight + CENTER_HEIGHT;
+					const x1 = -(GAP / 2);
+					const x2 = containerWidth + GAP / 2;
 
-				const startX = isFirstMonth ? -10 : x1;
+					const startX = isFirstMonth ? -10 : x1;
 
-				const lerp = (y1: number, y2: number, targetY: number) => {
-					if (y2 === y1) return startX;
-					const t = (targetY - y1) / (y2 - y1);
-					return startX + t * (x2 - startX);
-				};
+					const lerp = (y1: number, y2: number, targetY: number) => {
+						if (y2 === y1) return startX;
+						const t = (targetY - y1) / (y2 - y1);
+						return startX + t * (x2 - startX);
+					};
 
-				return (
-					<svg
-						className="absolute inset-0 w-full h-full pointer-events-none z-0"
-						style={{ overflow: 'visible' }}
-					>
-						{prevTotal >= 0 && month.cumulativeExpected >= 0 && (
-							<polygon
-								points={`${startX},${prevY} ${x2},${currentY} ${x2},${incomeBaseY} ${startX},${incomeBaseY}`}
-								fill="rgba(156, 163, 175, 0.3)"
-							/>
-						)}
-						{prevTotal < 0 && month.cumulativeExpected < 0 && (
-							<polygon
-								points={`${startX},${prevY} ${x2},${currentY} ${x2},${expenseBaseY} ${startX},${expenseBaseY}`}
-								fill="rgba(239, 68, 68, 0.3)"
-							/>
-						)}
-						{prevTotal >= 0 && month.cumulativeExpected < 0 && (() => {
-							const crossXIncome = lerp(prevY, currentY, incomeBaseY);
-							const crossXExpense = lerp(prevY, currentY, expenseBaseY);
-							return (
-								<>
-									<polygon
-										points={`${startX},${prevY} ${crossXIncome},${incomeBaseY} ${startX},${incomeBaseY}`}
-										fill="rgba(156, 163, 175, 0.3)"
-									/>
-									<polygon
-										points={`${crossXExpense},${expenseBaseY} ${x2},${currentY} ${x2},${expenseBaseY}`}
-										fill="rgba(239, 68, 68, 0.3)"
-									/>
-								</>
-							);
-						})()}
-						{prevTotal < 0 && month.cumulativeExpected >= 0 && (() => {
-							const crossXExpense = lerp(prevY, currentY, expenseBaseY);
-							const crossXIncome = lerp(prevY, currentY, incomeBaseY);
-							return (
-								<>
-									<polygon
-										points={`${startX},${prevY} ${crossXExpense},${expenseBaseY} ${startX},${expenseBaseY}`}
-										fill="rgba(239, 68, 68, 0.3)"
-									/>
-									<polygon
-										points={`${crossXIncome},${incomeBaseY} ${x2},${currentY} ${x2},${incomeBaseY}`}
-										fill="rgba(156, 163, 175, 0.3)"
-									/>
-								</>
-							);
-						})()}
-					</svg>
-				);
-			})()}
+					return (
+						<svg
+							className="absolute inset-0 w-full h-full pointer-events-none z-0"
+							style={{ overflow: "visible" }}
+						>
+							{prevTotal >= 0 && month.cumulativeExpected >= 0 && (
+								<polygon
+									points={`${startX},${prevY} ${x2},${currentY} ${x2},${incomeBaseY} ${startX},${incomeBaseY}`}
+									fill="rgba(156, 163, 175, 0.3)"
+								/>
+							)}
+							{prevTotal < 0 && month.cumulativeExpected < 0 && (
+								<polygon
+									points={`${startX},${prevY} ${x2},${currentY} ${x2},${expenseBaseY} ${startX},${expenseBaseY}`}
+									fill="rgba(239, 68, 68, 0.3)"
+								/>
+							)}
+							{prevTotal >= 0 &&
+								month.cumulativeExpected < 0 &&
+								(() => {
+									const crossXIncome = lerp(prevY, currentY, incomeBaseY);
+									const crossXExpense = lerp(prevY, currentY, expenseBaseY);
+									return (
+										<>
+											<polygon
+												points={`${startX},${prevY} ${crossXIncome},${incomeBaseY} ${startX},${incomeBaseY}`}
+												fill="rgba(156, 163, 175, 0.3)"
+											/>
+											<polygon
+												points={`${crossXExpense},${expenseBaseY} ${x2},${currentY} ${x2},${expenseBaseY}`}
+												fill="rgba(239, 68, 68, 0.3)"
+											/>
+										</>
+									);
+								})()}
+							{prevTotal < 0 &&
+								month.cumulativeExpected >= 0 &&
+								(() => {
+									const crossXExpense = lerp(prevY, currentY, expenseBaseY);
+									const crossXIncome = lerp(prevY, currentY, incomeBaseY);
+									return (
+										<>
+											<polygon
+												points={`${startX},${prevY} ${crossXExpense},${expenseBaseY} ${startX},${expenseBaseY}`}
+												fill="rgba(239, 68, 68, 0.3)"
+											/>
+											<polygon
+												points={`${crossXIncome},${incomeBaseY} ${x2},${currentY} ${x2},${incomeBaseY}`}
+												fill="rgba(156, 163, 175, 0.3)"
+											/>
+										</>
+									);
+								})()}
+						</svg>
+					);
+				})()}
 			<div className="flex-1 flex flex-col-reverse overflow-visible relative z-10">
 				{isFirstMonth &&
 					startingBalance !== undefined &&
 					startingBalance > 0 && (
 						<div
 							className="absolute w-3.5 h-3.5 bg-blue-500 rounded-sm border-2 border-white shadow z-50 pointer-events-none"
-							style={{ bottom: startingBalancePosition, left: -10, transform: 'translate(-50%, 50%)' }}
+							style={{
+								bottom: startingBalancePosition,
+								left: -10,
+								transform: "translate(-50%, 50%)",
+							}}
 							title={`Starting Balance: $${startingBalance.toLocaleString()}`}
 						/>
 					)}
 				{month.cumulativeExpected > 0 && (
 					<div
 						className="absolute w-3 h-3 bg-gray-500 rounded-full border-2 border-white shadow z-40 pointer-events-none"
-						style={{ bottom: totalPosition, right: -(GAP / 2 + 6), transform: 'translateY(50%)' }}
+						style={{
+							bottom: totalPosition,
+							right: -(GAP / 2 + 6),
+							transform: "translateY(50%)",
+						}}
 						title={`Total: $${month.cumulativeExpected.toLocaleString()}`}
 					/>
 				)}
@@ -226,8 +242,14 @@ export function MonthColumn({
 				))}
 			</div>
 
-			<div className={`px-1 py-1.5 border-y border-border/50 ${centerBgClass} space-y-0.5 shrink-0 h-24 flex flex-col justify-center relative z-10`}>
-				<div className={`text-[10px] font-semibold text-center uppercase tracking-wide mb-1 ${isNegativeBalance ? "text-red-600" : "text-muted-foreground"}`}>
+			<div
+				className={`px-1 py-1.5 border-y border-border/50 ${centerBgClass} space-y-0.5 shrink-0 h-24 flex flex-col justify-center relative z-10`}
+			>
+				<div
+					className={`text-[10px] font-semibold text-center uppercase tracking-wide mb-1 ${
+						isNegativeBalance ? "text-red-600" : "text-muted-foreground"
+					}`}
+				>
 					{month.name}
 				</div>
 				<div className="flex justify-between text-[10px]">
@@ -286,8 +308,14 @@ export function MonthColumn({
 				{month.cumulativeExpected < 0 && (
 					<div
 						className="absolute w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow z-40 pointer-events-none"
-						style={{ top: totalPosition, right: -(GAP / 2 + 6), transform: 'translateY(-50%)' }}
-						title={`Total: -$${Math.abs(month.cumulativeExpected).toLocaleString()}`}
+						style={{
+							top: totalPosition,
+							right: -(GAP / 2 + 6),
+							transform: "translateY(-50%)",
+						}}
+						title={`Total: -$${Math.abs(
+							month.cumulativeExpected
+						).toLocaleString()}`}
 					/>
 				)}
 				{expenseItems.map((item, index) => (
