@@ -1,26 +1,32 @@
 import os
 import uuid
+import sqlite3
 from datetime import date
 from typing import Optional, List
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-
-import libsql_experimental as libsql
+from pydantic import BaseModel
 
 # Database connection
 TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "")
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
+# Use in-memory or file-based SQLite for local/Vercel
+# Turso connection happens via HTTP in their client
+LOCAL_DB_PATH = "/tmp/cashflow.db"
+
+
+_db_initialized = False
+
 def get_db():
-    """Get database connection."""
-    if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
-        return libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
-    else:
-        # Fallback to local SQLite for development
-        return libsql.connect("file:local.db")
+    """Get SQLite database connection."""
+    global _db_initialized
+    conn = sqlite3.connect(LOCAL_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    if not _db_initialized:
+        init_db_tables(conn)
+        _db_initialized = True
+    return conn
 
 
 # Default categories to seed
@@ -38,12 +44,12 @@ DEFAULT_CATEGORIES = [
 ]
 
 
-def init_db():
+def init_db_tables(conn):
     """Initialize database tables and seed data."""
-    conn = get_db()
+    cursor = conn.cursor()
 
     # Create tables
-    conn.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -53,7 +59,7 @@ def init_db():
         )
     """)
 
-    conn.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS entries (
             id TEXT PRIMARY KEY,
             category_id TEXT NOT NULL REFERENCES categories(id),
@@ -71,7 +77,7 @@ def init_db():
         )
     """)
 
-    conn.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS recurring (
             id TEXT PRIMARY KEY,
             category_id TEXT NOT NULL REFERENCES categories(id),
@@ -84,7 +90,7 @@ def init_db():
         )
     """)
 
-    conn.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS milestones (
             id TEXT PRIMARY KEY,
             entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
@@ -98,7 +104,7 @@ def init_db():
         )
     """)
 
-    conn.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -106,19 +112,19 @@ def init_db():
     """)
 
     # Seed default categories if empty
-    result = conn.execute("SELECT COUNT(*) FROM categories")
-    count = result.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM categories")
+    count = cursor.fetchone()[0]
     if count == 0:
         for cat in DEFAULT_CATEGORIES:
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO categories (id, name, type, icon, color) VALUES (?, ?, ?, ?, ?)",
-                [str(uuid.uuid4()), cat["name"], cat["type"], cat["icon"], cat["color"]]
+                (str(uuid.uuid4()), cat["name"], cat["type"], cat["icon"], cat["color"])
             )
 
     # Seed default setting if not exists
-    result = conn.execute("SELECT COUNT(*) FROM settings WHERE key = 'starting_balance'")
-    if result.fetchone()[0] == 0:
-        conn.execute("INSERT INTO settings (key, value) VALUES ('starting_balance', '0')")
+    cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'starting_balance'")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO settings (key, value) VALUES ('starting_balance', '0')")
 
     conn.commit()
 
@@ -191,12 +197,7 @@ class EntryConfirm(BaseModel):
 
 
 # FastAPI app
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_db()
-    yield
-
-app = FastAPI(title="Cashflow Tracker API", lifespan=lifespan)
+app = FastAPI(title="Cashflow Tracker API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -207,29 +208,28 @@ app.add_middleware(
 )
 
 
-# Helper to convert row to dict
-def row_to_dict(row, columns):
-    return dict(zip(columns, row))
-
-
 # Categories endpoints
 @app.get("/api/categories")
 def list_categories():
     conn = get_db()
-    result = conn.execute("SELECT id, name, type, icon, color FROM categories ORDER BY type, name")
-    columns = ["id", "name", "type", "icon", "color"]
-    return [row_to_dict(row, columns) for row in result.fetchall()]
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, type, icon, color FROM categories ORDER BY type, name")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 
 @app.post("/api/categories", status_code=201)
 def create_category(category: CategoryBase):
     conn = get_db()
+    cursor = conn.cursor()
     cat_id = str(uuid.uuid4())
-    conn.execute(
+    cursor.execute(
         "INSERT INTO categories (id, name, type, icon, color) VALUES (?, ?, ?, ?, ?)",
-        [cat_id, category.name, category.type, category.icon, category.color]
+        (cat_id, category.name, category.type, category.icon, category.color)
     )
     conn.commit()
+    conn.close()
     return {"id": cat_id, **category.model_dump()}
 
 
@@ -237,6 +237,7 @@ def create_category(category: CategoryBase):
 @app.get("/api/entries")
 def list_entries(from_month: Optional[str] = None, to_month: Optional[str] = None):
     conn = get_db()
+    cursor = conn.cursor()
 
     query = """
         SELECT e.id, e.category_id, e.recurring_id, e.name, e.month_year,
@@ -258,134 +259,127 @@ def list_entries(from_month: Optional[str] = None, to_month: Optional[str] = Non
 
     query += " ORDER BY e.month_year, e.created_at"
 
-    result = conn.execute(query, params)
-    rows = result.fetchall()
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
 
     entries = []
     for row in rows:
         entry = {
-            "id": row[0],
-            "category_id": row[1],
-            "recurring_id": row[2],
-            "name": row[3],
-            "month_year": row[4],
-            "expected_amount": row[5],
-            "expected_date": row[6],
-            "actual_amount": row[7],
-            "actual_date": row[8],
-            "has_milestones": bool(row[9]),
-            "notes": row[10],
-            "created_at": row[11],
-            "updated_at": row[12],
+            "id": row["id"],
+            "category_id": row["category_id"],
+            "recurring_id": row["recurring_id"],
+            "name": row["name"],
+            "month_year": row["month_year"],
+            "expected_amount": row["expected_amount"],
+            "expected_date": row["expected_date"],
+            "actual_amount": row["actual_amount"],
+            "actual_date": row["actual_date"],
+            "has_milestones": bool(row["has_milestones"]),
+            "notes": row["notes"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
             "category": {
-                "id": row[13],
-                "name": row[14],
-                "type": row[15],
-                "icon": row[16],
-                "color": row[17],
+                "id": row["cat_id"],
+                "name": row["cat_name"],
+                "type": row["cat_type"],
+                "icon": row["cat_icon"],
+                "color": row["cat_color"],
             },
             "milestones": []
         }
 
         # Get milestones if entry has them
         if entry["has_milestones"]:
-            ms_result = conn.execute(
+            cursor.execute(
                 "SELECT id, entry_id, name, expected_amount, expected_date, actual_amount, actual_date, sort_order, created_at FROM milestones WHERE entry_id = ? ORDER BY sort_order",
-                [entry["id"]]
+                (entry["id"],)
             )
-            for ms_row in ms_result.fetchall():
-                entry["milestones"].append({
-                    "id": ms_row[0],
-                    "entry_id": ms_row[1],
-                    "name": ms_row[2],
-                    "expected_amount": ms_row[3],
-                    "expected_date": ms_row[4],
-                    "actual_amount": ms_row[5],
-                    "actual_date": ms_row[6],
-                    "sort_order": ms_row[7],
-                    "created_at": ms_row[8],
-                })
+            for ms_row in cursor.fetchall():
+                entry["milestones"].append(dict(ms_row))
 
         entries.append(entry)
 
+    conn.close()
     return entries
 
 
 @app.post("/api/entries", status_code=201)
 def create_entry(entry: EntryCreate):
     conn = get_db()
+    cursor = conn.cursor()
     entry_id = str(uuid.uuid4())
     now = date.today().isoformat()
 
-    conn.execute(
+    cursor.execute(
         """INSERT INTO entries (id, category_id, recurring_id, name, month_year,
            expected_amount, expected_date, actual_amount, actual_date, has_milestones, notes, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [entry_id, entry.category_id, entry.recurring_id, entry.name, entry.month_year,
+        (entry_id, entry.category_id, entry.recurring_id, entry.name, entry.month_year,
          entry.expected_amount, entry.expected_date, entry.actual_amount, entry.actual_date,
-         1 if entry.milestones else 0, entry.notes, now, now]
+         1 if entry.milestones else 0, entry.notes, now, now)
     )
 
     # Add milestones
     if entry.milestones:
         for i, ms in enumerate(entry.milestones):
-            conn.execute(
+            cursor.execute(
                 """INSERT INTO milestones (id, entry_id, name, expected_amount, expected_date,
                    actual_amount, actual_date, sort_order, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                [str(uuid.uuid4()), entry_id, ms.name, ms.expected_amount, ms.expected_date,
-                 ms.actual_amount, ms.actual_date, ms.sort_order or i, now]
+                (str(uuid.uuid4()), entry_id, ms.name, ms.expected_amount, ms.expected_date,
+                 ms.actual_amount, ms.actual_date, ms.sort_order or i, now)
             )
 
     conn.commit()
+    conn.close()
 
     # Fetch and return the created entry
-    return get_entry_by_id(conn, entry_id)
+    return get_entry_by_id(entry_id)
 
 
-def get_entry_by_id(conn, entry_id):
-    result = conn.execute(
+def get_entry_by_id(entry_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
         """SELECT e.id, e.category_id, e.recurring_id, e.name, e.month_year,
            e.expected_amount, e.expected_date, e.actual_amount, e.actual_date,
            e.has_milestones, e.notes, e.created_at, e.updated_at,
-           c.id, c.name, c.type, c.icon, c.color
+           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
            FROM entries e JOIN categories c ON e.category_id = c.id
            WHERE e.id = ?""",
-        [entry_id]
+        (entry_id,)
     )
-    row = result.fetchone()
+    row = cursor.fetchone()
     if not row:
+        conn.close()
         return None
 
     entry = {
-        "id": row[0], "category_id": row[1], "recurring_id": row[2], "name": row[3],
-        "month_year": row[4], "expected_amount": row[5], "expected_date": row[6],
-        "actual_amount": row[7], "actual_date": row[8], "has_milestones": bool(row[9]),
-        "notes": row[10], "created_at": row[11], "updated_at": row[12],
-        "category": {"id": row[13], "name": row[14], "type": row[15], "icon": row[16], "color": row[17]},
+        "id": row["id"], "category_id": row["category_id"], "recurring_id": row["recurring_id"],
+        "name": row["name"], "month_year": row["month_year"], "expected_amount": row["expected_amount"],
+        "expected_date": row["expected_date"], "actual_amount": row["actual_amount"],
+        "actual_date": row["actual_date"], "has_milestones": bool(row["has_milestones"]),
+        "notes": row["notes"], "created_at": row["created_at"], "updated_at": row["updated_at"],
+        "category": {"id": row["cat_id"], "name": row["cat_name"], "type": row["cat_type"],
+                     "icon": row["cat_icon"], "color": row["cat_color"]},
         "milestones": []
     }
 
     if entry["has_milestones"]:
-        ms_result = conn.execute(
+        cursor.execute(
             "SELECT id, entry_id, name, expected_amount, expected_date, actual_amount, actual_date, sort_order, created_at FROM milestones WHERE entry_id = ?",
-            [entry_id]
+            (entry_id,)
         )
-        for ms_row in ms_result.fetchall():
-            entry["milestones"].append({
-                "id": ms_row[0], "entry_id": ms_row[1], "name": ms_row[2],
-                "expected_amount": ms_row[3], "expected_date": ms_row[4],
-                "actual_amount": ms_row[5], "actual_date": ms_row[6],
-                "sort_order": ms_row[7], "created_at": ms_row[8]
-            })
+        for ms_row in cursor.fetchall():
+            entry["milestones"].append(dict(ms_row))
 
+    conn.close()
     return entry
 
 
 @app.get("/api/entries/{entry_id}")
 def get_entry(entry_id: str):
-    conn = get_db()
-    entry = get_entry_by_id(conn, entry_id)
+    entry = get_entry_by_id(entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     return entry
@@ -394,144 +388,167 @@ def get_entry(entry_id: str):
 @app.put("/api/entries/{entry_id}")
 def update_entry(entry_id: str, entry: EntryBase):
     conn = get_db()
+    cursor = conn.cursor()
     now = date.today().isoformat()
 
     # Check if exists
-    result = conn.execute("SELECT id FROM entries WHERE id = ?", [entry_id])
-    if not result.fetchone():
+    cursor.execute("SELECT id FROM entries WHERE id = ?", (entry_id,))
+    if not cursor.fetchone():
+        conn.close()
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    conn.execute(
+    cursor.execute(
         """UPDATE entries SET category_id=?, name=?, month_year=?, expected_amount=?,
            expected_date=?, actual_amount=?, actual_date=?, notes=?, updated_at=?
            WHERE id=?""",
-        [entry.category_id, entry.name, entry.month_year, entry.expected_amount,
-         entry.expected_date, entry.actual_amount, entry.actual_date, entry.notes, now, entry_id]
+        (entry.category_id, entry.name, entry.month_year, entry.expected_amount,
+         entry.expected_date, entry.actual_amount, entry.actual_date, entry.notes, now, entry_id)
     )
     conn.commit()
+    conn.close()
 
-    return get_entry_by_id(conn, entry_id)
+    return get_entry_by_id(entry_id)
 
 
 @app.delete("/api/entries/{entry_id}", status_code=204)
 def delete_entry(entry_id: str):
     conn = get_db()
-    result = conn.execute("SELECT id FROM entries WHERE id = ?", [entry_id])
-    if not result.fetchone():
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM entries WHERE id = ?", (entry_id,))
+    if not cursor.fetchone():
+        conn.close()
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    conn.execute("DELETE FROM milestones WHERE entry_id = ?", [entry_id])
-    conn.execute("DELETE FROM entries WHERE id = ?", [entry_id])
+    cursor.execute("DELETE FROM milestones WHERE entry_id = ?", (entry_id,))
+    cursor.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
     conn.commit()
+    conn.close()
 
 
 @app.post("/api/entries/{entry_id}/confirm")
 def confirm_entry(entry_id: str, confirm: EntryConfirm):
     conn = get_db()
+    cursor = conn.cursor()
 
-    result = conn.execute("SELECT expected_amount FROM entries WHERE id = ?", [entry_id])
-    row = result.fetchone()
+    cursor.execute("SELECT expected_amount FROM entries WHERE id = ?", (entry_id,))
+    row = cursor.fetchone()
     if not row:
+        conn.close()
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    actual_amount = confirm.actual_amount if confirm.actual_amount is not None else row[0]
+    actual_amount = confirm.actual_amount if confirm.actual_amount is not None else row["expected_amount"]
     actual_date = confirm.actual_date or date.today().isoformat()
 
-    conn.execute(
+    cursor.execute(
         "UPDATE entries SET actual_amount=?, actual_date=?, updated_at=? WHERE id=?",
-        [actual_amount, actual_date, date.today().isoformat(), entry_id]
+        (actual_amount, actual_date, date.today().isoformat(), entry_id)
     )
     conn.commit()
+    conn.close()
 
-    return get_entry_by_id(conn, entry_id)
+    return get_entry_by_id(entry_id)
 
 
 # Recurring endpoints
 @app.get("/api/recurring")
 def list_recurring():
     conn = get_db()
-    result = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """SELECT r.id, r.category_id, r.name, r.expected_amount, r.frequency,
            r.start_month, r.end_month, r.created_at,
-           c.id, c.name, c.type, c.icon, c.color
+           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
            FROM recurring r JOIN categories c ON r.category_id = c.id
            ORDER BY r.name"""
     )
 
     items = []
-    for row in result.fetchall():
+    for row in cursor.fetchall():
         items.append({
-            "id": row[0], "category_id": row[1], "name": row[2],
-            "expected_amount": row[3], "frequency": row[4],
-            "start_month": row[5], "end_month": row[6], "created_at": row[7],
-            "category": {"id": row[8], "name": row[9], "type": row[10], "icon": row[11], "color": row[12]}
+            "id": row["id"], "category_id": row["category_id"], "name": row["name"],
+            "expected_amount": row["expected_amount"], "frequency": row["frequency"],
+            "start_month": row["start_month"], "end_month": row["end_month"], "created_at": row["created_at"],
+            "category": {"id": row["cat_id"], "name": row["cat_name"], "type": row["cat_type"],
+                        "icon": row["cat_icon"], "color": row["cat_color"]}
         })
+    conn.close()
     return items
 
 
 @app.post("/api/recurring", status_code=201)
 def create_recurring(recurring: RecurringBase):
     conn = get_db()
+    cursor = conn.cursor()
     rec_id = str(uuid.uuid4())
     now = date.today().isoformat()
 
-    conn.execute(
+    cursor.execute(
         """INSERT INTO recurring (id, category_id, name, expected_amount, frequency, start_month, end_month, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        [rec_id, recurring.category_id, recurring.name, recurring.expected_amount,
-         recurring.frequency, recurring.start_month, recurring.end_month, now]
+        (rec_id, recurring.category_id, recurring.name, recurring.expected_amount,
+         recurring.frequency, recurring.start_month, recurring.end_month, now)
     )
     conn.commit()
 
     # Fetch with category
-    result = conn.execute(
+    cursor.execute(
         """SELECT r.id, r.category_id, r.name, r.expected_amount, r.frequency,
            r.start_month, r.end_month, r.created_at,
-           c.id, c.name, c.type, c.icon, c.color
+           c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
            FROM recurring r JOIN categories c ON r.category_id = c.id
            WHERE r.id = ?""",
-        [rec_id]
+        (rec_id,)
     )
-    row = result.fetchone()
+    row = cursor.fetchone()
+    conn.close()
     return {
-        "id": row[0], "category_id": row[1], "name": row[2],
-        "expected_amount": row[3], "frequency": row[4],
-        "start_month": row[5], "end_month": row[6], "created_at": row[7],
-        "category": {"id": row[8], "name": row[9], "type": row[10], "icon": row[11], "color": row[12]}
+        "id": row["id"], "category_id": row["category_id"], "name": row["name"],
+        "expected_amount": row["expected_amount"], "frequency": row["frequency"],
+        "start_month": row["start_month"], "end_month": row["end_month"], "created_at": row["created_at"],
+        "category": {"id": row["cat_id"], "name": row["cat_name"], "type": row["cat_type"],
+                    "icon": row["cat_icon"], "color": row["cat_color"]}
     }
 
 
 @app.delete("/api/recurring/{recurring_id}", status_code=204)
 def delete_recurring(recurring_id: str):
     conn = get_db()
-    result = conn.execute("SELECT id FROM recurring WHERE id = ?", [recurring_id])
-    if not result.fetchone():
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM recurring WHERE id = ?", (recurring_id,))
+    if not cursor.fetchone():
+        conn.close()
         raise HTTPException(status_code=404, detail="Recurring not found")
 
-    conn.execute("DELETE FROM recurring WHERE id = ?", [recurring_id])
+    cursor.execute("DELETE FROM recurring WHERE id = ?", (recurring_id,))
     conn.commit()
+    conn.close()
 
 
 # Settings endpoints
 @app.get("/api/settings")
 def list_settings():
     conn = get_db()
-    result = conn.execute("SELECT key, value FROM settings")
-    return [{"key": row[0], "value": row[1]} for row in result.fetchall()]
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 
 @app.put("/api/settings/{key}")
 def update_setting(key: str, setting: dict):
     conn = get_db()
+    cursor = conn.cursor()
     value = setting.get("value", "")
 
-    result = conn.execute("SELECT key FROM settings WHERE key = ?", [key])
-    if result.fetchone():
-        conn.execute("UPDATE settings SET value = ? WHERE key = ?", [value, key])
+    cursor.execute("SELECT key FROM settings WHERE key = ?", (key,))
+    if cursor.fetchone():
+        cursor.execute("UPDATE settings SET value = ? WHERE key = ?", (value, key))
     else:
-        conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", [key, value])
+        cursor.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, value))
 
     conn.commit()
+    conn.close()
     return {"key": key, "value": value}
 
 
