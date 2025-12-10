@@ -1,4 +1,4 @@
-import { Plus, Settings, ChevronLeft, ChevronRight, Users } from "lucide-react"
+import { Settings, ChevronLeft, ChevronRight, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { CashflowSelector } from "@/components/cashflow-selector"
 import { UserMenu } from "@/components/user-menu"
@@ -7,8 +7,6 @@ import type { User, Cashflow } from "@/types"
 interface HeaderProps {
   startingBalance: number
   onOpenSettings: () => void
-  onAddIncome: () => void
-  onAddSpend: () => void
   dateRange: string
   onPrevious: () => void
   onNext: () => void
@@ -19,15 +17,12 @@ interface HeaderProps {
   onSelectCashflow: (cashflow: Cashflow) => void
   onCreateCashflow: (name: string, description?: string) => void
   onLogout: () => void
-  canEdit: boolean
   onOpenSharing?: () => void
 }
 
 export function Header({
   startingBalance,
   onOpenSettings,
-  onAddIncome,
-  onAddSpend,
   dateRange,
   onPrevious,
   onNext,
@@ -38,7 +33,6 @@ export function Header({
   onSelectCashflow,
   onCreateCashflow,
   onLogout,
-  canEdit,
   onOpenSharing,
 }: HeaderProps) {
   const isOwner = currentCashflow?.role === "owner"
@@ -88,18 +82,6 @@ export function Header({
           <Settings className="h-3 w-3 mr-1" />
           Settings
         </Button>
-        {canEdit && (
-          <>
-            <Button size="sm" onClick={onAddIncome} className="h-7 text-xs bg-green-600 hover:bg-green-700">
-              <Plus className="h-3 w-3 mr-1" />
-              Income
-            </Button>
-            <Button size="sm" onClick={onAddSpend} className="h-7 text-xs bg-gray-600 hover:bg-gray-700">
-              <Plus className="h-3 w-3 mr-1" />
-              Spend
-            </Button>
-          </>
-        )}
         <UserMenu user={user} onLogout={onLogout} />
       </div>
     </div>

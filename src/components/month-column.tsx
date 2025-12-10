@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useDroppable } from "@dnd-kit/core";
+import { Plus } from "lucide-react";
 import { ItemCard } from "./item-card";
 import type { MonthData, MonthItem } from "@/types";
 
@@ -12,6 +13,8 @@ interface MonthColumnProps {
 	chartScale: number;
 	balanceScale: number;
 	onItemClick: (item: MonthItem) => void;
+	onAddIncome?: (monthId: string) => void;
+	onAddSpend?: (monthId: string) => void;
 }
 
 const ITEM_GAP = 1;
@@ -25,7 +28,10 @@ export function MonthColumn({
 	chartScale,
 	balanceScale,
 	onItemClick,
+	onAddIncome,
+	onAddSpend,
 }: MonthColumnProps) {
+	const [isHovered, setIsHovered] = useState(false);
 	const { setNodeRef, isOver } = useDroppable({
 		id: month.id,
 	});
@@ -116,6 +122,8 @@ export function MonthColumn({
 				).current = node;
 			}}
 			className={`min-w-32 flex-1 flex flex-col h-full transition-colors ${bgClass} relative`}
+			onMouseEnter={() => setIsHovered(true)}
+			onMouseLeave={() => setIsHovered(false)}
 		>
 			{containerHeight > 0 &&
 				containerWidth > 0 &&
@@ -232,6 +240,15 @@ export function MonthColumn({
 						/>
 					</div>
 				))}
+				{isHovered && onAddIncome && (
+					<button
+						onClick={() => onAddIncome(month.id)}
+						className="flex items-center justify-center gap-1 py-1 text-[10px] text-green-600 hover:bg-green-100 dark:hover:bg-green-950/50 transition-colors rounded mx-0.5 mb-0.5"
+					>
+						<Plus className="h-3 w-3" />
+						Income
+					</button>
+				)}
 			</div>
 
 			<div
@@ -327,6 +344,15 @@ export function MonthColumn({
 						/>
 					</div>
 				))}
+				{isHovered && onAddSpend && (
+					<button
+						onClick={() => onAddSpend(month.id)}
+						className="flex items-center justify-center gap-1 py-1 text-[10px] text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors rounded mx-0.5 mt-0.5"
+					>
+						<Plus className="h-3 w-3" />
+						Spend
+					</button>
+				)}
 			</div>
 		</div>
 	);

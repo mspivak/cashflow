@@ -68,6 +68,7 @@ export default function App() {
   const [showSharingModal, setShowSharingModal] = useState(false)
   const [entryType, setEntryType] = useState<"income" | "expense">("income")
   const [editingItem, setEditingItem] = useState<MonthItem | null>(null)
+  const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
 
   const { data: user } = useCurrentUser()
   const { data: cashflows = [] } = useCashflows()
@@ -260,18 +261,6 @@ export default function App() {
       <Header
         startingBalance={startingBalance}
         onOpenSettings={() => setShowSettingsModal(true)}
-        onAddIncome={() => {
-          if (!canEdit) return
-          setEntryType("income")
-          setEditingItem(null)
-          setShowAddModal(true)
-        }}
-        onAddSpend={() => {
-          if (!canEdit) return
-          setEntryType("expense")
-          setEditingItem(null)
-          setShowAddModal(true)
-        }}
         dateRange={`${months[0]?.name} — ${months[months.length - 1]?.name}`}
         onPrevious={loadPreviousMonths}
         onNext={loadNextMonths}
@@ -282,7 +271,6 @@ export default function App() {
         onSelectCashflow={setCurrentCashflow}
         onCreateCashflow={handleCreateCashflow}
         onLogout={() => logout.mutate()}
-        canEdit={canEdit}
         onOpenSharing={() => setShowSharingModal(true)}
       />
 
@@ -308,6 +296,18 @@ export default function App() {
                 chartScale={chartScale}
                 balanceScale={balanceScale}
                 onItemClick={handleItemClick}
+                onAddIncome={canEdit ? (monthId) => {
+                  setEntryType("income")
+                  setEditingItem(null)
+                  setSelectedMonthId(monthId)
+                  setShowAddModal(true)
+                } : undefined}
+                onAddSpend={canEdit ? (monthId) => {
+                  setEntryType("expense")
+                  setEditingItem(null)
+                  setSelectedMonthId(monthId)
+                  setShowAddModal(true)
+                } : undefined}
               />
             )
           })}
@@ -318,7 +318,10 @@ export default function App() {
         open={showAddModal}
         onOpenChange={(open) => {
           setShowAddModal(open)
-          if (!open) setEditingItem(null)
+          if (!open) {
+            setEditingItem(null)
+            setSelectedMonthId(null)
+          }
         }}
         onSave={handleSave}
         onUpdatePlan={handleUpdatePlan}
@@ -327,7 +330,7 @@ export default function App() {
         categories={categories}
         plans={plans}
         monthIds={monthIds}
-        currentMonthId={monthIds[0]}
+        currentMonthId={selectedMonthId || monthIds[0]}
         entryType={entryType}
         canEdit={canEdit}
       />
