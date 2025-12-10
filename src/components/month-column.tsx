@@ -87,7 +87,7 @@ export function MonthColumn({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerHeight, setContainerHeight] = useState(0);
 	const [containerWidth, setContainerWidth] = useState(0);
-	const CENTER_HEIGHT = 96;
+	const CENTER_HEIGHT = 28;
 	const GAP = 8;
 
 	useEffect(() => {
@@ -144,7 +144,7 @@ export function MonthColumn({
 
 					return (
 						<svg
-							className="absolute inset-0 w-full h-full pointer-events-none z-0"
+							className="absolute inset-0 w-full h-full pointer-events-none z-[1]"
 							style={{ overflow: "visible" }}
 						>
 							{prevTotal >= 0 && month.cumulativeExpected >= 0 && (
@@ -252,63 +252,44 @@ export function MonthColumn({
 			</div>
 
 			<div
-				className={`px-1 py-1.5 border-y border-border/50 ${centerBgClass} space-y-0.5 shrink-0 h-24 flex flex-col justify-center relative z-10`}
+				className={`px-1 py-1 border-y border-border/50 ${centerBgClass} shrink-0 flex items-center justify-center relative z-10`}
 			>
-				<div
-					className={`text-[10px] font-semibold text-center uppercase tracking-wide mb-1 ${
-						isNegativeBalance ? "text-red-600" : "text-muted-foreground"
-					}`}
-				>
-					{month.name}
-				</div>
-				<div className="flex justify-between text-[10px]">
-					<span className="text-muted-foreground">Balance</span>
-					<div className="flex gap-1.5 font-mono">
-						{hasActual && month.expectedBalance === month.actualBalance ? (
-							<span
-								className={`font-medium ${
-									month.actualBalance >= 0 ? "text-green-600" : "text-red-600"
-								}`}
-							>
-								{month.actualBalance >= 0 ? "+" : ""}
-								{month.actualBalance.toLocaleString()}
-							</span>
-						) : (
-							<>
-								<span
-									className={`font-medium ${
-										month.expectedBalance >= 0
-											? "text-green-600/50"
-											: "text-red-600/50"
-									}`}
-								>
-									{month.expectedBalance >= 0 ? "+" : ""}
-									{month.expectedBalance.toLocaleString()}
-								</span>
-								{hasActual && (
-									<span
-										className={`font-medium ${
-											month.actualBalance >= 0
-												? "text-green-600"
-												: "text-red-600"
-										}`}
-									>
-										{month.actualBalance >= 0 ? "+" : ""}
-										{month.actualBalance.toLocaleString()}
-									</span>
-								)}
-							</>
-						)}
-					</div>
-				</div>
-				<div className="flex justify-between text-[11px] font-semibold border-t border-border/30 pt-0.5">
-					<span className="text-muted-foreground">Total</span>
+				<div className="flex items-center gap-1.5 text-[10px]">
 					<span
-						className={`font-mono ${
+						className={`font-semibold uppercase tracking-wide ${
+							isNegativeBalance ? "text-red-600" : "text-muted-foreground"
+						}`}
+					>
+						{month.name}
+					</span>
+					<span className="text-muted-foreground">·</span>
+					<span
+						className={`font-mono font-semibold ${
 							month.cumulativeExpected >= 0 ? "text-green-600" : "text-red-600"
 						}`}
 					>
 						${month.cumulativeExpected.toLocaleString()}
+					</span>
+					<span className="text-muted-foreground/60 font-mono">
+						({hasActual && month.expectedBalance === month.actualBalance ? (
+							<span className={month.actualBalance >= 0 ? "text-green-600/70" : "text-red-600/70"}>
+								{month.actualBalance >= 0 ? "+" : ""}{month.actualBalance.toLocaleString()}
+							</span>
+						) : (
+							<>
+								<span className={month.expectedBalance >= 0 ? "text-green-600/50" : "text-red-600/50"}>
+									{month.expectedBalance >= 0 ? "+" : ""}{month.expectedBalance.toLocaleString()}
+								</span>
+								{hasActual && (
+									<>
+										<span className="text-muted-foreground/40">/</span>
+										<span className={month.actualBalance >= 0 ? "text-green-600/70" : "text-red-600/70"}>
+											{month.actualBalance >= 0 ? "+" : ""}{month.actualBalance.toLocaleString()}
+										</span>
+									</>
+								)}
+							</>
+						)})
 					</span>
 				</div>
 			</div>

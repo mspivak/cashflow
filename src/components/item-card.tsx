@@ -65,7 +65,7 @@ export function ItemCard({ item, onClick, itemIndex, height }: ItemCardProps) {
       type="button"
       onClick={handleClick}
       style={style}
-      className={`w-full text-left px-1.5 border-l-2 transition-all hover:opacity-80 overflow-hidden ${hasProportionalHeight ? "flex flex-col justify-center py-0" : "py-1 mt-px"} ${isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${isDragging ? "z-50" : ""}`}
+      className={`w-full text-left px-1.5 border-l-2 transition-all hover:opacity-80 overflow-hidden relative z-[2] ${hasProportionalHeight ? "flex flex-col justify-center py-0" : "py-1 mt-px"} ${isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${isDragging ? "z-50" : ""}`}
       {...(isDraggable ? { ...attributes, ...listeners } : {})}
     >
       <div className="flex items-center justify-between gap-1">
