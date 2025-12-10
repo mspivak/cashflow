@@ -6,8 +6,15 @@ services:
       - "8000:8000"
     volumes:
       - ./api:/app
+    environment:
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key-change-in-production}
+      - APP_URL=${APP_URL:-http://localhost:5173}
     command: >
-      bash -c "pip install -q fastapi uvicorn &&
+      bash -c "pip install -q fastapi uvicorn authlib httpx python-jose[cryptography] itsdangerous &&
                uvicorn index:app --host 0.0.0.0 --port 8000 --reload"
 
   frontend:

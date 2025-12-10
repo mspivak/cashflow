@@ -1,8 +1,49 @@
 export type CategoryType = "income" | "expense"
 export type Frequency = "one-time" | "weekly" | "biweekly" | "monthly"
 export type PlanStatus = "active" | "completed"
+export type MemberRole = "owner" | "editor" | "viewer"
+
+export interface User {
+  id: string
+  email: string
+  name?: string
+  avatar_url?: string
+  provider: string
+  created_at: string
+}
+
+export interface Cashflow {
+  id: string
+  name: string
+  description?: string
+  owner_id: string
+  role: MemberRole
+  created_at: string
+  updated_at: string
+}
+
+export interface CashflowCreate {
+  name: string
+  description?: string
+}
+
+export interface CashflowUpdate {
+  name?: string
+  description?: string
+}
+
+export interface CashflowMember {
+  id: string
+  user_id: string
+  email: string
+  name?: string
+  avatar_url?: string
+  role: MemberRole
+  invited_at: string
+}
 
 export interface Category {
+  cashflow_id?: string
   id: string
   name: string
   type: CategoryType

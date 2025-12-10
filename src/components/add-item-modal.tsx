@@ -31,6 +31,7 @@ interface AddItemModalProps {
   monthIds: string[]
   currentMonthId: string
   entryType: "income" | "expense"
+  canEdit?: boolean
 }
 
 export function AddItemModal({
@@ -45,6 +46,7 @@ export function AddItemModal({
   monthIds,
   currentMonthId,
   entryType,
+  canEdit = true,
 }: AddItemModalProps) {
   const [mode, setMode] = useState<"new" | "existing">("new")
   const [selectedPlanId, setSelectedPlanId] = useState("")

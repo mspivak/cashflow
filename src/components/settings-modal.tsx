@@ -16,6 +16,7 @@ interface SettingsModalProps {
   onOpenChange: (open: boolean) => void
   settings: Setting[]
   onSave: (key: string, value: string) => void
+  canEdit?: boolean
 }
 
 export function SettingsModal({
@@ -23,6 +24,7 @@ export function SettingsModal({
   onOpenChange,
   settings,
   onSave,
+  canEdit = true,
 }: SettingsModalProps) {
   const [startingBalance, setStartingBalance] = useState("")
   const [chartScale, setChartScale] = useState("40")
@@ -107,9 +109,9 @@ export function SettingsModal({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {canEdit ? "Cancel" : "Close"}
           </Button>
-          <Button onClick={handleSave}>Save</Button>
+          {canEdit && <Button onClick={handleSave}>Save</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
