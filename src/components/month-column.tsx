@@ -47,8 +47,8 @@ export function MonthColumn({
 		: "bg-muted/30";
 
 	const centerBgClass = isNegativeBalance
-		? "bg-red-100 dark:bg-red-900/30"
-		: "bg-muted/30";
+		? "bg-red-600 dark:bg-red-700"
+		: "bg-neutral-500 dark:bg-neutral-600";
 
 	const { incomeItems, expenseItems } = useMemo(() => {
 		const income: MonthItem[] = [];
@@ -87,7 +87,7 @@ export function MonthColumn({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerHeight, setContainerHeight] = useState(0);
 	const [containerWidth, setContainerWidth] = useState(0);
-	const CENTER_HEIGHT = 28;
+	const CENTER_HEIGHT = 36;
 	const GAP = 8;
 
 	useEffect(() => {
@@ -252,38 +252,34 @@ export function MonthColumn({
 			</div>
 
 			<div
-				className={`px-1 py-1 border-y border-border/50 ${centerBgClass} shrink-0 flex items-center justify-center relative z-10`}
+				className={`px-1 border-y border-border/50 ${centerBgClass} shrink-0 flex flex-col items-center justify-center relative z-10`}
+				style={{ height: CENTER_HEIGHT, marginLeft: -4, marginRight: -4, paddingLeft: 4, paddingRight: 4 }}
 			>
-				<div className="flex items-center gap-1.5 text-[10px]">
-					<span
-						className={`font-semibold uppercase tracking-wide ${
-							isNegativeBalance ? "text-red-600" : "text-muted-foreground"
-						}`}
-					>
-						{month.name}
-					</span>
-					<span className="text-muted-foreground">·</span>
-					<span
-						className={`font-mono font-semibold ${
-							month.cumulativeExpected >= 0 ? "text-green-600" : "text-red-600"
-						}`}
-					>
+				<span
+					className={`font-semibold uppercase tracking-wide text-[10px] ${
+						isNegativeBalance ? "text-red-200" : "text-gray-200"
+					}`}
+				>
+					{month.name}
+				</span>
+				<div className="flex items-center gap-1 text-[9px]">
+					<span className="font-mono font-semibold text-white">
 						${month.cumulativeExpected.toLocaleString()}
 					</span>
-					<span className="text-muted-foreground/60 font-mono">
+					<span className="text-white/60 font-mono">
 						({hasActual && month.expectedBalance === month.actualBalance ? (
-							<span className={month.actualBalance >= 0 ? "text-green-600/70" : "text-red-600/70"}>
+							<span className="text-white/80">
 								{month.actualBalance >= 0 ? "+" : ""}{month.actualBalance.toLocaleString()}
 							</span>
 						) : (
 							<>
-								<span className={month.expectedBalance >= 0 ? "text-green-600/50" : "text-red-600/50"}>
+								<span className="text-white/50">
 									{month.expectedBalance >= 0 ? "+" : ""}{month.expectedBalance.toLocaleString()}
 								</span>
 								{hasActual && (
 									<>
-										<span className="text-muted-foreground/40">/</span>
-										<span className={month.actualBalance >= 0 ? "text-green-600/70" : "text-red-600/70"}>
+										<span className="text-white/40">/</span>
+										<span className="text-white/80">
 											{month.actualBalance >= 0 ? "+" : ""}{month.actualBalance.toLocaleString()}
 										</span>
 									</>
