@@ -13,11 +13,11 @@ from jose import jwt
 from starlette.middleware.sessions import SessionMiddleware
 import libsql_client
 
-_raw_turso_url = os.getenv("TURSO_DATABASE_URL", "")
-TURSO_DATABASE_URL = (
-    _raw_turso_url.replace("libsql://", "https://") if _raw_turso_url else ""
+_raw_db_url = os.getenv("DATABASE_URL", "")
+DATABASE_URL = (
+    _raw_db_url.replace("libsql://", "https://") if _raw_db_url else ""
 )
-TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
+DATABASE_AUTH_TOKEN = os.getenv("DATABASE_AUTH_TOKEN", "")
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
@@ -52,13 +52,13 @@ if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
         client_kwargs={"scope": "user:email"},
     )
 
-if not TURSO_DATABASE_URL:
-    raise RuntimeError("TURSO_DATABASE_URL environment variable is required")
-if not TURSO_AUTH_TOKEN and not TURSO_DATABASE_URL.startswith("file:"):
-    raise RuntimeError("TURSO_AUTH_TOKEN environment variable is required for remote databases")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required")
+if not DATABASE_AUTH_TOKEN and not DATABASE_URL.startswith("file:"):
+    raise RuntimeError("DATABASE_AUTH_TOKEN environment variable is required for remote databases")
 
-_turso_client = libsql_client.create_client_sync(
-    url=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN or None
+_db_client = libsql_client.create_client_sync(
+    url=DATABASE_URL, auth_token=DATABASE_AUTH_TOKEN or None
 )
 
 _db_initialized = False
@@ -129,7 +129,7 @@ class DBWrapper:
 
 def get_db():
     global _db_initialized
-    wrapper = DBWrapper(_turso_client, is_turso=True)
+    wrapper = DBWrapper(_db_client, is_turso=True)
     if not _db_initialized:
         init_db_tables(wrapper)
         _db_initialized = True
