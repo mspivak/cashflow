@@ -13,6 +13,8 @@ import type {
   CashflowUpdate,
   CashflowMember,
   MemberRole,
+  PublicCashflow,
+  LocalCashflow,
 } from "@/types"
 
 const API_BASE = "/api"
@@ -215,6 +217,135 @@ export async function updateSetting(cashflowId: string, key: string, value: stri
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
+    body: JSON.stringify({ value }),
+  })
+  return handleResponse<Setting>(response)
+}
+
+export async function updateCashflowShareSettings(id: string, isPublic: boolean): Promise<Cashflow> {
+  const response = await fetch(`${API_BASE}/cashflows/${id}/share`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ is_public: isPublic }),
+  })
+  return handleResponse<Cashflow>(response)
+}
+
+export async function importCashflow(data: LocalCashflow): Promise<Cashflow> {
+  const response = await fetch(`${API_BASE}/cashflows/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description,
+      categories: data.categories,
+      plans: data.plans,
+      entries: data.entries,
+      settings: data.settings,
+    }),
+  })
+  return handleResponse<Cashflow>(response)
+}
+
+export async function fetchPublicCashflow(shareId: string): Promise<PublicCashflow> {
+  const response = await fetch(`${API_BASE}/public/${shareId}`)
+  return handleResponse<PublicCashflow>(response)
+}
+
+export async function fetchPublicCategories(shareId: string): Promise<Category[]> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/categories`)
+  return handleResponse<Category[]>(response)
+}
+
+export async function createPublicCategory(shareId: string, category: Omit<Category, "id" | "cashflow_id">): Promise<Category> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/categories`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(category),
+  })
+  return handleResponse<Category>(response)
+}
+
+export async function fetchPublicPlans(shareId: string, status?: string, categoryId?: string): Promise<Plan[]> {
+  const params = new URLSearchParams()
+  if (status) params.set("status", status)
+  if (categoryId) params.set("category_id", categoryId)
+  const query = params.toString() ? `?${params}` : ""
+  const response = await fetch(`${API_BASE}/public/${shareId}/plans${query}`)
+  return handleResponse<Plan[]>(response)
+}
+
+export async function createPublicPlan(shareId: string, plan: PlanCreate): Promise<Plan> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/plans`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(plan),
+  })
+  return handleResponse<Plan>(response)
+}
+
+export async function updatePublicPlan(shareId: string, id: string, plan: PlanUpdate): Promise<Plan> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/plans/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(plan),
+  })
+  return handleResponse<Plan>(response)
+}
+
+export async function deletePublicPlan(shareId: string, id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/plans/${id}`, {
+    method: "DELETE",
+  })
+  return handleResponse<void>(response)
+}
+
+export async function fetchPublicEntries(shareId: string, fromMonth?: string, toMonth?: string, planId?: string): Promise<Entry[]> {
+  const params = new URLSearchParams()
+  if (fromMonth) params.set("from_month", fromMonth)
+  if (toMonth) params.set("to_month", toMonth)
+  if (planId) params.set("plan_id", planId)
+  const query = params.toString() ? `?${params}` : ""
+  const response = await fetch(`${API_BASE}/public/${shareId}/entries${query}`)
+  return handleResponse<Entry[]>(response)
+}
+
+export async function createPublicEntry(shareId: string, entry: EntryCreate): Promise<Entry> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/entries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  })
+  return handleResponse<Entry>(response)
+}
+
+export async function updatePublicEntry(shareId: string, id: string, entry: EntryUpdate): Promise<Entry> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/entries/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  })
+  return handleResponse<Entry>(response)
+}
+
+export async function deletePublicEntry(shareId: string, id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/entries/${id}`, {
+    method: "DELETE",
+  })
+  return handleResponse<void>(response)
+}
+
+export async function fetchPublicSettings(shareId: string): Promise<Setting[]> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/settings`)
+  return handleResponse<Setting[]>(response)
+}
+
+export async function updatePublicSetting(shareId: string, key: string, value: string): Promise<Setting> {
+  const response = await fetch(`${API_BASE}/public/${shareId}/settings/${key}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ value }),
   })
   return handleResponse<Setting>(response)

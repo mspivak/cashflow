@@ -35,7 +35,6 @@ export function Header({
   onLogout,
   onOpenSharing,
 }: HeaderProps) {
-  const isOwner = currentCashflow?.role === "owner"
   return (
     <div className="flex items-center justify-between gap-4 mb-4">
       <div className="flex items-center gap-3">

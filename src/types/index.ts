@@ -18,8 +18,57 @@ export interface Cashflow {
   description?: string
   owner_id: string
   role: MemberRole
+  share_id?: string
+  is_public?: boolean
   created_at: string
   updated_at: string
+}
+
+export interface PublicCashflow {
+  id: string
+  name: string
+  description?: string
+  share_id: string
+  is_public: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalCashflow {
+  id: string
+  name: string
+  description?: string
+  categories: Category[]
+  plans: LocalPlan[]
+  entries: LocalEntry[]
+  settings: Setting[]
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalPlan {
+  id: string
+  category_id: string
+  name: string
+  expected_amount: number
+  frequency: Frequency
+  expected_day?: number
+  start_month: string
+  end_month?: string
+  status: PlanStatus
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalEntry {
+  id: string
+  plan_id: string
+  month_year: string
+  amount: number
+  date?: string
+  notes?: string
+  created_at: string
 }
 
 export interface CashflowCreate {

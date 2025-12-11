@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react"
+import { useParams, Link } from "react-router-dom"
 import { addMonths, subMonths } from "date-fns"
 import {
   DndContext,
@@ -9,33 +10,23 @@ import {
   PointerSensor,
 } from "@dnd-kit/core"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Header } from "@/components/header"
+import { Button } from "@/components/ui/button"
 import { MonthColumn } from "@/components/month-column"
 import { AddItemModal } from "@/components/add-item-modal"
 import { SettingsModal } from "@/components/settings-modal"
-import { SharingModal } from "@/components/sharing-modal"
-import { useCashflowContext } from "@/context/cashflow-context"
 import {
-  useEntries,
-  useCategories,
-  usePlans,
-  useSettings,
-  useCreatePlan,
-  useCreateEntry,
-  useUpdateEntry,
-  useDeleteEntry,
-  useDeletePlan,
-  useUpdatePlan,
-  useUpdateSetting,
-  useCurrentUser,
-  useLogout,
-  useCashflows,
-  useCreateCashflow,
-  useCashflowMembers,
-  useInviteMember,
-  useUpdateMemberRole,
-  useRemoveMember,
-  useUpdateShareSettings,
+  usePublicCashflow,
+  usePublicCategories,
+  usePublicPlans,
+  usePublicEntries,
+  usePublicSettings,
+  useCreatePublicPlan,
+  useCreatePublicEntry,
+  useUpdatePublicEntry,
+  useDeletePublicEntry,
+  useDeletePublicPlan,
+  useUpdatePublicPlan,
+  useUpdatePublicSetting,
 } from "@/hooks/use-items"
 import {
   generateMonthId,
@@ -48,14 +39,13 @@ import type {
   PlanUpdate,
   EntryCreate,
   MonthItem,
-  MemberRole,
 } from "@/types"
+import { ChevronLeft, ChevronRight, Calendar, Settings } from "lucide-react"
 
 const MONTHS_PER_PAGE = 12
 
-export default function App() {
-  const { currentCashflow, setCurrentCashflow, userRole } = useCashflowContext()
-  const cashflowId = currentCashflow?.id || ""
+export function SharedCashflowPage() {
+  const { shareId } = useParams<{ shareId: string }>()
 
   const currentMonthId = useMemo(() => generateMonthId(new Date()), [])
 
@@ -67,37 +57,23 @@ export default function App() {
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
-  const [showSharingModal, setShowSharingModal] = useState(false)
   const [entryType, setEntryType] = useState<"income" | "expense">("income")
   const [editingItem, setEditingItem] = useState<MonthItem | null>(null)
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
 
-  const { data: user } = useCurrentUser()
-  const { data: cashflows = [] } = useCashflows()
-  const logout = useLogout()
-  const createCashflow = useCreateCashflow()
+  const { data: cashflow, isLoading: cashflowLoading, isError } = usePublicCashflow(shareId || "")
+  const { data: entries = [], isLoading: entriesLoading } = usePublicEntries(shareId || "")
+  const { data: categories = [], isLoading: categoriesLoading } = usePublicCategories(shareId || "")
+  const { data: plans = [], isLoading: plansLoading } = usePublicPlans(shareId || "")
+  const { data: settings = [], isLoading: settingsLoading } = usePublicSettings(shareId || "")
 
-  const { data: entries = [], isLoading: entriesLoading } = useEntries(cashflowId)
-  const { data: categories = [], isLoading: categoriesLoading } = useCategories(cashflowId)
-  const { data: plans = [], isLoading: plansLoading } = usePlans(cashflowId)
-  const { data: settings = [], isLoading: settingsLoading } = useSettings(cashflowId)
-
-  const createPlan = useCreatePlan(cashflowId)
-  const createEntry = useCreateEntry(cashflowId)
-  const updateEntry = useUpdateEntry(cashflowId)
-  const deleteEntry = useDeleteEntry(cashflowId)
-  const deletePlan = useDeletePlan(cashflowId)
-  const updatePlan = useUpdatePlan(cashflowId)
-  const updateSetting = useUpdateSetting(cashflowId)
-
-  const { data: members = [] } = useCashflowMembers(cashflowId)
-  const inviteMember = useInviteMember()
-  const updateMemberRole = useUpdateMemberRole()
-  const removeMember = useRemoveMember()
-  const updateShareSettings = useUpdateShareSettings()
-
-  const canEdit = userRole === "owner" || userRole === "editor"
-  const isOwner = userRole === "owner"
+  const createPlan = useCreatePublicPlan(shareId || "")
+  const createEntry = useCreatePublicEntry(shareId || "")
+  const updateEntry = useUpdatePublicEntry(shareId || "")
+  const deleteEntry = useDeletePublicEntry(shareId || "")
+  const deletePlan = useDeletePublicPlan(shareId || "")
+  const updatePlan = useUpdatePublicPlan(shareId || "")
+  const updateSetting = useUpdatePublicSetting(shareId || "")
 
   const startingBalance = useMemo(() => {
     const setting = settings.find((s) => s.key === "starting_balance")
@@ -120,8 +96,6 @@ export default function App() {
   )
 
   const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
-    if (!canEdit) return
-
     if (data.plan && data.entry) {
       createPlan.mutate(data.plan, {
         onSuccess: (newPlan) => {
@@ -159,8 +133,6 @@ export default function App() {
   }
 
   const handleDeleteItem = (item: MonthItem) => {
-    if (!canEdit) return
-
     if (item.type === "entry" && item.entry) {
       deleteEntry.mutate(item.entry.id)
     } else if (item.type === "expected" && item.plan) {
@@ -169,18 +141,14 @@ export default function App() {
   }
 
   const handleUpdatePlan = (id: string, data: PlanUpdate) => {
-    if (!canEdit) return
     updatePlan.mutate({ id, plan: data })
   }
 
   const handleUpdateSetting = (key: string, value: string) => {
-    if (!canEdit) return
     updateSetting.mutate({ key, value })
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
-    if (!canEdit) return
-
     const { active, over } = event
     if (!over) return
 
@@ -207,38 +175,6 @@ export default function App() {
     setStartDate(new Date())
   }
 
-  const handleCreateCashflow = (name: string, description?: string) => {
-    console.log("handleCreateCashflow called with:", name, description)
-    createCashflow.mutate(
-      { name, description },
-      {
-        onSuccess: (newCashflow) => {
-          console.log("Cashflow created:", newCashflow)
-          setCurrentCashflow(newCashflow)
-        },
-        onError: (error) => {
-          console.error("Failed to create cashflow:", error)
-        },
-      }
-    )
-  }
-
-  const handleInviteMember = (email: string, role: MemberRole) => {
-    inviteMember.mutate({ cashflowId, email, role })
-  }
-
-  const handleUpdateMemberRole = (userId: string, role: MemberRole) => {
-    updateMemberRole.mutate({ cashflowId, userId, role })
-  }
-
-  const handleRemoveMember = (userId: string) => {
-    removeMember.mutate({ cashflowId, userId })
-  }
-
-  const handleTogglePublic = (isPublic: boolean) => {
-    updateShareSettings.mutate({ id: cashflowId, isPublic })
-  }
-
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -248,7 +184,19 @@ export default function App() {
   )
 
   const isLoading =
-    !cashflowId || entriesLoading || categoriesLoading || plansLoading || settingsLoading
+    cashflowLoading || entriesLoading || categoriesLoading || plansLoading || settingsLoading
+
+  if (isError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+        <h1 className="text-2xl font-bold mb-4">Cashflow not found</h1>
+        <p className="text-muted-foreground mb-6">This cashflow doesn't exist or is not publicly shared.</p>
+        <Link to="/login">
+          <Button>Go to Login</Button>
+        </Link>
+      </div>
+    )
+  }
 
   if (isLoading) {
     return (
@@ -263,23 +211,40 @@ export default function App() {
     )
   }
 
+  const dateRange = `${months[0]?.name} — ${months[months.length - 1]?.name}`
+
   return (
     <div className="p-4 bg-background h-screen flex flex-col overflow-hidden">
-      <Header
-        startingBalance={startingBalance}
-        onOpenSettings={() => setShowSettingsModal(true)}
-        dateRange={`${months[0]?.name} — ${months[months.length - 1]?.name}`}
-        onPrevious={loadPreviousMonths}
-        onNext={loadNextMonths}
-        onToday={goToToday}
-        user={user!}
-        cashflows={cashflows}
-        currentCashflow={currentCashflow}
-        onSelectCashflow={setCurrentCashflow}
-        onCreateCashflow={handleCreateCashflow}
-        onLogout={() => logout.mutate()}
-        onOpenSharing={() => setShowSharingModal(true)}
-      />
+      <div className="flex items-center justify-between mb-2 gap-4">
+        <div className="flex items-center gap-4">
+          <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm">
+            Shared Cashflow
+          </div>
+          <h1 className="text-xl font-semibold">{cashflow?.name}</h1>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={loadPreviousMonths}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={goToToday} className="gap-1">
+            <Calendar className="h-4 w-4" />
+            {dateRange}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={loadNextMonths}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setShowSettingsModal(true)}>
+            <Settings className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <Link to="/login">
+          <Button variant="outline" size="sm">
+            Login to save your own
+          </Button>
+        </Link>
+      </div>
 
       <DndContext
         sensors={sensors}
@@ -303,18 +268,18 @@ export default function App() {
                 chartScale={chartScale}
                 balanceScale={balanceScale}
                 onItemClick={handleItemClick}
-                onAddIncome={canEdit ? (monthId) => {
+                onAddIncome={(monthId) => {
                   setEntryType("income")
                   setEditingItem(null)
                   setSelectedMonthId(monthId)
                   setShowAddModal(true)
-                } : undefined}
-                onAddSpend={canEdit ? (monthId) => {
+                }}
+                onAddSpend={(monthId) => {
                   setEntryType("expense")
                   setEditingItem(null)
                   setSelectedMonthId(monthId)
                   setShowAddModal(true)
-                } : undefined}
+                }}
               />
             )
           })}
@@ -346,20 +311,7 @@ export default function App() {
         onOpenChange={setShowSettingsModal}
         settings={settings}
         onSave={handleUpdateSetting}
-        canEdit={canEdit}
-      />
-
-      <SharingModal
-        open={showSharingModal}
-        onOpenChange={setShowSharingModal}
-        members={members}
-        onInvite={handleInviteMember}
-        onUpdateRole={handleUpdateMemberRole}
-        onRemove={handleRemoveMember}
-        isOwner={isOwner}
-        shareId={currentCashflow?.share_id}
-        isPublic={currentCashflow?.is_public}
-        onTogglePublic={handleTogglePublic}
+        canEdit={true}
       />
     </div>
   )

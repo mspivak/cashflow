@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Trash2, UserPlus } from "lucide-react"
+import { Trash2, UserPlus, Copy, Check, Globe, Lock } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -27,6 +28,9 @@ interface SharingModalProps {
   onUpdateRole: (userId: string, role: MemberRole) => void
   onRemove: (userId: string) => void
   isOwner: boolean
+  shareId?: string
+  isPublic?: boolean
+  onTogglePublic?: (isPublic: boolean) => void
 }
 
 export function SharingModal({
@@ -37,10 +41,24 @@ export function SharingModal({
   onUpdateRole,
   onRemove,
   isOwner,
+  shareId,
+  isPublic,
+  onTogglePublic,
 }: SharingModalProps) {
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<MemberRole>("viewer")
   const [error, setError] = useState("")
+  const [copied, setCopied] = useState(false)
+
+  const publicUrl = shareId ? `${window.location.origin}/s/${shareId}` : ""
+
+  const handleCopyLink = async () => {
+    if (publicUrl) {
+      await navigator.clipboard.writeText(publicUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
 
   const handleInvite = () => {
     if (!email.trim()) {
@@ -75,6 +93,49 @@ export function SharingModal({
         <DialogHeader>
           <DialogTitle>Share Budget</DialogTitle>
         </DialogHeader>
+
+        {isOwner && shareId && onTogglePublic && (
+          <div className="space-y-4 border-b pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {isPublic ? (
+                  <Globe className="h-4 w-4 text-green-600" />
+                ) : (
+                  <Lock className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <Label htmlFor="public-toggle" className="text-sm font-medium cursor-pointer">
+                    Public Link
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {isPublic ? "Anyone with the link can view and edit" : "Only members can access"}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                id="public-toggle"
+                checked={isPublic}
+                onCheckedChange={onTogglePublic}
+              />
+            </div>
+            {isPublic && publicUrl && (
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={publicUrl}
+                  className="text-xs"
+                />
+                <Button variant="outline" size="icon" onClick={handleCopyLink}>
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
         {isOwner && (
           <div className="space-y-4 border-b pb-4">

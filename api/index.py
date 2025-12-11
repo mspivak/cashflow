@@ -180,6 +180,8 @@ def init_db_tables(conn):
             name TEXT NOT NULL,
             description TEXT,
             owner_id TEXT NOT NULL REFERENCES users(id),
+            share_id TEXT UNIQUE,
+            is_public INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -342,8 +344,14 @@ class CashflowResponse(CashflowBase):
     id: str
     owner_id: str
     role: str
+    share_id: Optional[str]
+    is_public: bool
     created_at: str
     updated_at: str
+
+
+class CashflowShareSettings(BaseModel):
+    is_public: bool
 
 
 class CashflowMemberBase(BaseModel):
@@ -465,12 +473,13 @@ def create_default_cashflow(user_id: str, user_name: Optional[str]):
     cursor = conn.cursor()
 
     cashflow_id = str(uuid.uuid4())
+    share_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     name = f"{user_name}'s Budget" if user_name else "My Budget"
 
     cursor.execute(
-        "INSERT INTO cashflows (id, name, description, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (cashflow_id, name, None, user_id, now, now)
+        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        (cashflow_id, name, None, user_id, share_id, now, now)
     )
 
     member_id = str(uuid.uuid4())
@@ -608,7 +617,7 @@ def list_cashflows(request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        """SELECT c.id, c.name, c.description, c.owner_id, c.created_at, c.updated_at, cm.role
+        """SELECT c.id, c.name, c.description, c.owner_id, c.share_id, c.is_public, c.created_at, c.updated_at, cm.role
            FROM cashflows c
            JOIN cashflow_members cm ON c.id = cm.cashflow_id
            WHERE cm.user_id = ?
@@ -618,7 +627,7 @@ def list_cashflows(request: Request):
     rows = cursor.fetchall()
     conn.close()
 
-    return [dict(row) for row in rows]
+    return [{**dict(row), "is_public": bool(row["is_public"])} for row in rows]
 
 
 @app.post("/api/cashflows", status_code=201)
@@ -629,11 +638,12 @@ def create_cashflow(cashflow: CashflowCreate, request: Request):
     cursor = conn.cursor()
 
     cashflow_id = str(uuid.uuid4())
+    share_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
 
     cursor.execute(
-        "INSERT INTO cashflows (id, name, description, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (cashflow_id, cashflow.name, cashflow.description, user_id, now, now)
+        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        (cashflow_id, cashflow.name, cashflow.description, user_id, share_id, now, now)
     )
 
     member_id = str(uuid.uuid4())
@@ -662,6 +672,8 @@ def create_cashflow(cashflow: CashflowCreate, request: Request):
         "description": cashflow.description,
         "owner_id": user_id,
         "role": "owner",
+        "share_id": share_id,
+        "is_public": False,
         "created_at": now,
         "updated_at": now
     }
@@ -675,7 +687,7 @@ def get_cashflow(cashflow_id: str, request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, name, description, owner_id, created_at, updated_at FROM cashflows WHERE id = ?",
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
         (cashflow_id,)
     )
     row = cursor.fetchone()
@@ -686,6 +698,7 @@ def get_cashflow(cashflow_id: str, request: Request):
 
     result = dict(row)
     result["role"] = role
+    result["is_public"] = bool(result["is_public"])
     return result
 
 
@@ -718,7 +731,7 @@ def update_cashflow(cashflow_id: str, cashflow: CashflowUpdate, request: Request
         conn.commit()
 
     cursor.execute(
-        "SELECT id, name, description, owner_id, created_at, updated_at FROM cashflows WHERE id = ?",
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
         (cashflow_id,)
     )
     row = cursor.fetchone()
@@ -726,6 +739,7 @@ def update_cashflow(cashflow_id: str, cashflow: CashflowUpdate, request: Request
 
     result = dict(row)
     result["role"] = "owner"
+    result["is_public"] = bool(result["is_public"])
     return result
 
 
@@ -1378,6 +1392,560 @@ def update_setting(cashflow_id: str, key: str, setting: dict, request: Request):
     conn.commit()
     conn.close()
     return {"key": key, "value": value}
+
+
+@app.put("/api/cashflows/{cashflow_id}/share")
+def update_share_settings(cashflow_id: str, settings: CashflowShareSettings, request: Request):
+    user_id = require_auth(request)
+    check_cashflow_access(user_id, cashflow_id, ["owner"])
+
+    conn = get_db()
+    cursor = conn.cursor()
+    now = datetime.utcnow().isoformat()
+
+    cursor.execute(
+        "UPDATE cashflows SET is_public = ?, updated_at = ? WHERE id = ?",
+        (1 if settings.is_public else 0, now, cashflow_id)
+    )
+    conn.commit()
+
+    cursor.execute(
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
+        (cashflow_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    result = dict(row)
+    result["role"] = "owner"
+    result["is_public"] = bool(result["is_public"])
+    return result
+
+
+def get_public_cashflow(share_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE share_id = ?",
+        (share_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Cashflow not found")
+
+    if not row["is_public"]:
+        raise HTTPException(status_code=404, detail="Cashflow not found")
+
+    return dict(row)
+
+
+@app.get("/api/public/{share_id}")
+def get_public_cashflow_details(share_id: str):
+    cashflow = get_public_cashflow(share_id)
+    return {
+        "id": cashflow["id"],
+        "name": cashflow["name"],
+        "description": cashflow["description"],
+        "share_id": cashflow["share_id"],
+        "is_public": bool(cashflow["is_public"]),
+        "created_at": cashflow["created_at"],
+        "updated_at": cashflow["updated_at"]
+    }
+
+
+@app.get("/api/public/{share_id}/categories")
+def list_public_categories(share_id: str):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, cashflow_id, name, type, icon, color FROM categories WHERE cashflow_id = ? ORDER BY type, name",
+        (cashflow_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/public/{share_id}/categories", status_code=201)
+def create_public_category(share_id: str, category: CategoryBase):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cat_id = str(uuid.uuid4())
+    cursor.execute(
+        "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
+        (cat_id, cashflow_id, category.name, category.type, category.icon, category.color)
+    )
+    conn.commit()
+    conn.close()
+    return {"id": cat_id, "cashflow_id": cashflow_id, **category.model_dump()}
+
+
+@app.get("/api/public/{share_id}/plans")
+def list_public_plans(share_id: str, status: Optional[str] = None, category_id: Optional[str] = None):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT p.id, p.cashflow_id, p.category_id, p.name, p.expected_amount, p.frequency,
+               p.expected_day, p.start_month, p.end_month, p.status, p.notes,
+               p.created_at, p.updated_at,
+               c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
+        FROM plans p
+        JOIN categories c ON p.category_id = c.id
+        WHERE p.cashflow_id = ?
+    """
+    params = [cashflow_id]
+
+    if status:
+        query += " AND p.status = ?"
+        params.append(status)
+    if category_id:
+        query += " AND p.category_id = ?"
+        params.append(category_id)
+
+    query += " ORDER BY p.name"
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    plans = []
+    for row in rows:
+        plans.append({
+            "id": row["id"],
+            "cashflow_id": row["cashflow_id"],
+            "category_id": row["category_id"],
+            "name": row["name"],
+            "expected_amount": row["expected_amount"],
+            "frequency": row["frequency"],
+            "expected_day": row["expected_day"],
+            "start_month": row["start_month"],
+            "end_month": row["end_month"],
+            "status": row["status"],
+            "notes": row["notes"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "category": {
+                "id": row["cat_id"],
+                "name": row["cat_name"],
+                "type": row["cat_type"],
+                "icon": row["cat_icon"],
+                "color": row["cat_color"],
+            },
+        })
+
+    return plans
+
+
+@app.post("/api/public/{share_id}/plans", status_code=201)
+def create_public_plan(share_id: str, plan: PlanCreate):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    plan_id = str(uuid.uuid4())
+    now = date.today().isoformat()
+
+    cursor.execute(
+        """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
+           expected_day, start_month, end_month, status, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)""",
+        (plan_id, cashflow_id, plan.category_id, plan.name, plan.expected_amount, plan.frequency,
+         plan.expected_day, plan.start_month, plan.end_month, plan.notes, now, now)
+    )
+    conn.commit()
+    result = get_plan_by_id(plan_id, conn)
+    conn.close()
+    return result
+
+
+@app.put("/api/public/{share_id}/plans/{plan_id}")
+def update_public_plan(share_id: str, plan_id: str, plan: PlanUpdate):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    now = date.today().isoformat()
+
+    cursor.execute("SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    updates = []
+    params = []
+    data = plan.model_dump(exclude_unset=True)
+
+    for key, value in data.items():
+        updates.append(f"{key} = ?")
+        params.append(value)
+
+    if updates:
+        updates.append("updated_at = ?")
+        params.append(now)
+        params.append(plan_id)
+
+        cursor.execute(
+            f"UPDATE plans SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+
+    result = get_plan_by_id(plan_id, conn)
+    conn.close()
+    return result
+
+
+@app.delete("/api/public/{share_id}/plans/{plan_id}", status_code=204)
+def delete_public_plan(share_id: str, plan_id: str):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    cursor.execute("DELETE FROM entries WHERE plan_id = ?", (plan_id,))
+    cursor.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+    conn.commit()
+    conn.close()
+
+
+@app.get("/api/public/{share_id}/entries")
+def list_public_entries(share_id: str, from_month: Optional[str] = None, to_month: Optional[str] = None, plan_id: Optional[str] = None):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT e.id, e.plan_id, e.month_year, e.amount, e.date, e.notes, e.created_at,
+               p.id as p_id, p.cashflow_id, p.category_id, p.name as plan_name, p.expected_amount,
+               p.frequency, p.expected_day, p.start_month, p.end_month, p.status as plan_status,
+               p.notes as plan_notes, p.created_at as plan_created_at, p.updated_at as plan_updated_at,
+               c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
+        FROM entries e
+        JOIN plans p ON e.plan_id = p.id
+        JOIN categories c ON p.category_id = c.id
+        WHERE p.cashflow_id = ?
+    """
+    params = [cashflow_id]
+
+    if from_month:
+        query += " AND e.month_year >= ?"
+        params.append(from_month)
+    if to_month:
+        query += " AND e.month_year <= ?"
+        params.append(to_month)
+    if plan_id:
+        query += " AND e.plan_id = ?"
+        params.append(plan_id)
+
+    query += " ORDER BY e.month_year, e.created_at"
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    entries = []
+    for row in rows:
+        entries.append({
+            "id": row["id"],
+            "plan_id": row["plan_id"],
+            "month_year": row["month_year"],
+            "amount": row["amount"],
+            "date": row["date"],
+            "notes": row["notes"],
+            "created_at": row["created_at"],
+            "plan": {
+                "id": row["p_id"],
+                "cashflow_id": row["cashflow_id"],
+                "category_id": row["category_id"],
+                "name": row["plan_name"],
+                "expected_amount": row["expected_amount"],
+                "frequency": row["frequency"],
+                "expected_day": row["expected_day"],
+                "start_month": row["start_month"],
+                "end_month": row["end_month"],
+                "status": row["plan_status"],
+                "notes": row["plan_notes"],
+                "created_at": row["plan_created_at"],
+                "updated_at": row["plan_updated_at"],
+                "category": {
+                    "id": row["cat_id"],
+                    "name": row["cat_name"],
+                    "type": row["cat_type"],
+                    "icon": row["cat_icon"],
+                    "color": row["cat_color"],
+                },
+            },
+        })
+
+    return entries
+
+
+@app.post("/api/public/{share_id}/entries", status_code=201)
+def create_public_entry(share_id: str, entry: EntryCreate):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    entry_id = str(uuid.uuid4())
+    now = date.today().isoformat()
+
+    cursor.execute("SELECT id, frequency FROM plans WHERE id = ? AND cashflow_id = ?", (entry.plan_id, cashflow_id))
+    plan_row = cursor.fetchone()
+    if not plan_row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    cursor.execute(
+        """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (entry_id, entry.plan_id, entry.month_year, entry.amount, entry.date, entry.notes, now)
+    )
+
+    if plan_row["frequency"] == "one-time":
+        cursor.execute(
+            "UPDATE plans SET status = 'completed', updated_at = ? WHERE id = ?",
+            (now, entry.plan_id)
+        )
+
+    conn.commit()
+    result = get_entry_by_id(entry_id, conn)
+    conn.close()
+    return result
+
+
+@app.put("/api/public/{share_id}/entries/{entry_id}")
+def update_public_entry(share_id: str, entry_id: str, entry: EntryUpdate):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """SELECT e.id FROM entries e
+           JOIN plans p ON e.plan_id = p.id
+           WHERE e.id = ? AND p.cashflow_id = ?""",
+        (entry_id, cashflow_id)
+    )
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    updates = []
+    params = []
+    data = entry.model_dump(exclude_unset=True)
+
+    for key, value in data.items():
+        updates.append(f"{key} = ?")
+        params.append(value)
+
+    if updates:
+        params.append(entry_id)
+        cursor.execute(
+            f"UPDATE entries SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+
+    result = get_entry_by_id(entry_id, conn)
+    conn.close()
+    return result
+
+
+@app.delete("/api/public/{share_id}/entries/{entry_id}", status_code=204)
+def delete_public_entry(share_id: str, entry_id: str):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT e.id FROM entries e
+           JOIN plans p ON e.plan_id = p.id
+           WHERE e.id = ? AND p.cashflow_id = ?""",
+        (entry_id, cashflow_id)
+    )
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    cursor.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+    conn.commit()
+    conn.close()
+
+
+@app.get("/api/public/{share_id}/settings")
+def list_public_settings(share_id: str):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings WHERE cashflow_id = ?", (cashflow_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+@app.put("/api/public/{share_id}/settings/{key}")
+def update_public_setting(share_id: str, key: str, setting: dict):
+    cashflow = get_public_cashflow(share_id)
+    cashflow_id = cashflow["id"]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    value = setting["value"]
+
+    cursor.execute("SELECT key FROM settings WHERE cashflow_id = ? AND key = ?", (cashflow_id, key))
+    if cursor.fetchone():
+        cursor.execute("UPDATE settings SET value = ? WHERE cashflow_id = ? AND key = ?", (value, cashflow_id, key))
+    else:
+        cursor.execute("INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)", (cashflow_id, key, value))
+
+    conn.commit()
+    conn.close()
+    return {"key": key, "value": value}
+
+
+class CashflowImportCategory(BaseModel):
+    id: str
+    name: str
+    type: str
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
+class CashflowImportPlan(BaseModel):
+    id: str
+    category_id: str
+    name: str
+    expected_amount: float
+    frequency: str
+    expected_day: Optional[int] = None
+    start_month: str
+    end_month: Optional[str] = None
+    status: str
+    notes: Optional[str] = None
+
+
+class CashflowImportEntry(BaseModel):
+    id: str
+    plan_id: str
+    month_year: str
+    amount: float
+    date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CashflowImportSetting(BaseModel):
+    key: str
+    value: str
+
+
+class CashflowImport(BaseModel):
+    name: str
+    description: Optional[str] = None
+    categories: List[CashflowImportCategory]
+    plans: List[CashflowImportPlan]
+    entries: List[CashflowImportEntry]
+    settings: List[CashflowImportSetting]
+
+
+@app.post("/api/cashflows/import", status_code=201)
+def import_cashflow(data: CashflowImport, request: Request):
+    user_id = require_auth(request)
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cashflow_id = str(uuid.uuid4())
+    share_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+
+    cursor.execute(
+        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        (cashflow_id, data.name, data.description, user_id, share_id, now, now)
+    )
+
+    member_id = str(uuid.uuid4())
+    cursor.execute(
+        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, 'owner', ?)",
+        (member_id, cashflow_id, user_id, now)
+    )
+
+    category_id_map = {}
+    for cat in data.categories:
+        new_cat_id = str(uuid.uuid4())
+        category_id_map[cat.id] = new_cat_id
+        cursor.execute(
+            "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
+            (new_cat_id, cashflow_id, cat.name, cat.type, cat.icon, cat.color)
+        )
+
+    plan_id_map = {}
+    for plan in data.plans:
+        new_plan_id = str(uuid.uuid4())
+        plan_id_map[plan.id] = new_plan_id
+        new_category_id = category_id_map[plan.category_id]
+        cursor.execute(
+            """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
+               expected_day, start_month, end_month, status, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (new_plan_id, cashflow_id, new_category_id, plan.name, plan.expected_amount, plan.frequency,
+             plan.expected_day, plan.start_month, plan.end_month, plan.status, plan.notes, now, now)
+        )
+
+    for entry in data.entries:
+        new_entry_id = str(uuid.uuid4())
+        new_plan_id = plan_id_map[entry.plan_id]
+        cursor.execute(
+            """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (new_entry_id, new_plan_id, entry.month_year, entry.amount, entry.date, entry.notes, now)
+        )
+
+    for setting in data.settings:
+        cursor.execute(
+            "INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)",
+            (cashflow_id, setting.key, setting.value)
+        )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": cashflow_id,
+        "name": data.name,
+        "description": data.description,
+        "owner_id": user_id,
+        "role": "owner",
+        "share_id": share_id,
+        "is_public": False,
+        "created_at": now,
+        "updated_at": now
+    }
 
 
 @app.get("/api/health")

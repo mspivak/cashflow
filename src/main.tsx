@@ -1,10 +1,13 @@
-import { StrictMode } from "react"
+import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
-import { useCurrentUser, useCashflows } from "@/hooks/use-items"
+import { useCurrentUser, useCashflows, useImportCashflow } from "@/hooks/use-items"
 import { CashflowProvider } from "@/context/cashflow-context"
 import { LoginPage } from "@/pages/login"
+import { SharedCashflowPage } from "@/pages/shared-cashflow"
+import { AnonymousApp } from "@/pages/anonymous-app"
+import { getLocalCashflow, clearLocalCashflow, hasPendingImport, setPendingImport } from "@/lib/local-storage"
 import App from "./App"
 import "./index.css"
 
@@ -18,12 +21,35 @@ const queryClient = new QueryClient({
 })
 
 function AuthenticatedApp() {
-  const { data: cashflows = [], isLoading } = useCashflows()
+  const { data: cashflows = [], isLoading, refetch } = useCashflows()
+  const importCashflow = useImportCashflow()
 
-  if (isLoading) {
+  useEffect(() => {
+    if (hasPendingImport()) {
+      const localCashflow = getLocalCashflow()
+      if (localCashflow) {
+        importCashflow.mutate(localCashflow, {
+          onSuccess: () => {
+            clearLocalCashflow()
+            setPendingImport(false)
+            refetch()
+          },
+          onError: () => {
+            setPendingImport(false)
+          },
+        })
+      } else {
+        setPendingImport(false)
+      }
+    }
+  }, [])
+
+  if (isLoading || importCashflow.isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
+        <div className="animate-pulse text-muted-foreground">
+          {importCashflow.isPending ? "Importing your cashflow..." : "Loading..."}
+        </div>
       </div>
     )
   }
@@ -35,7 +61,7 @@ function AuthenticatedApp() {
   )
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function MainRoute() {
   const { data: user, isLoading, isError } = useCurrentUser()
 
   if (isLoading) {
@@ -47,10 +73,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isError || !user) {
-    return <Navigate to="/login" replace />
+    return <AnonymousApp />
   }
 
-  return <>{children}</>
+  return <AuthenticatedApp />
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
@@ -84,14 +110,8 @@ createRoot(document.getElementById("root")!).render(
               </PublicRoute>
             }
           />
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute>
-                <AuthenticatedApp />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/s/:shareId" element={<SharedCashflowPage />} />
+          <Route path="/*" element={<MainRoute />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
