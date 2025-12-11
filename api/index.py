@@ -374,19 +374,12 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         try:
             return await call_next(request)
         except Exception as exc:
-            tb = traceback.extract_tb(exc.__traceback__)
-            app_frames = [f for f in tb if "/api/index.py" in f.filename]
-            if app_frames:
-                frame = app_frames[-1]
-                location = f"{frame.filename}:{frame.lineno} in {frame.name}"
-            else:
-                frame = tb[-1] if tb else None
-                location = f"{frame.filename}:{frame.lineno}" if frame else "unknown"
+            tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
             return JSONResponse(
                 status_code=422,
                 content={
                     "detail": f"{type(exc).__name__}: {str(exc)}",
-                    "location": location,
+                    "traceback": tb_str,
                 },
             )
 
