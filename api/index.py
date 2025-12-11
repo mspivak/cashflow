@@ -2122,3 +2122,8 @@ def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/api/debug/env")
+def debug_env():
+    return {"database_url_start": DATABASE_URL[:50] if DATABASE_URL else None}
+
+
