@@ -3,3 +3,4 @@ authlib
 httpx
 python-jose[cryptography]
 itsdangerous
+libsql-client
