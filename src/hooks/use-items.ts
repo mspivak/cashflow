@@ -17,6 +17,7 @@ export function useLogout() {
     mutationFn: api.logout,
     onSuccess: () => {
       queryClient.clear()
+      localStorage.removeItem("cashflow_current_id")
       window.location.href = "/login"
     },
   })

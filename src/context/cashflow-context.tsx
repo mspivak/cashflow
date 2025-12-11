@@ -18,11 +18,18 @@ export function CashflowProvider({
   children: ReactNode
   cashflows: Cashflow[]
 }) {
-  const [currentCashflow, setCurrentCashflowState] = useState<Cashflow | null>(null)
+  const [currentCashflow, setCurrentCashflowState] = useState<Cashflow | null>(() => {
+    if (cashflows.length === 0) return null
+    const savedId = localStorage.getItem(STORAGE_KEY)
+    const saved = cashflows.find((c) => c.id === savedId)
+    if (saved) return saved
+    return cashflows[0]
+  })
 
   useEffect(() => {
     if (cashflows.length === 0) {
       setCurrentCashflowState(null)
+      localStorage.removeItem(STORAGE_KEY)
       return
     }
 
