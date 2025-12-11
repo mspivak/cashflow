@@ -25,7 +25,7 @@ function AuthenticatedApp() {
   const importCashflow = useImportCashflow()
 
   useEffect(() => {
-    if (hasPendingImport()) {
+    if (hasPendingImport() && !importCashflow.isPending) {
       const localCashflow = getLocalCashflow()
       if (localCashflow) {
         importCashflow.mutate(localCashflow, {
@@ -34,7 +34,8 @@ function AuthenticatedApp() {
             setPendingImport(false)
             refetch()
           },
-          onError: () => {
+          onError: (error) => {
+            console.error("Failed to import cashflow:", error)
             setPendingImport(false)
           },
         })
