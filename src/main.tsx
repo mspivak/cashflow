@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from "react"
+import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
@@ -23,9 +23,10 @@ const queryClient = new QueryClient({
 function AuthenticatedApp() {
   const { data: cashflows = [], isLoading, refetch } = useCashflows()
   const importCashflow = useImportCashflow()
+  const [pendingImport, setLocalPendingImport] = useState(() => hasPendingImport())
 
   useEffect(() => {
-    if (hasPendingImport() && !importCashflow.isPending) {
+    if (pendingImport && !importCashflow.isPending) {
       const localCashflow = getLocalCashflow()
       if (localCashflow) {
         importCashflow.mutate(localCashflow, {
@@ -33,24 +34,28 @@ function AuthenticatedApp() {
             localStorage.setItem("cashflow_current_id", importedCashflow.id)
             clearLocalCashflow()
             setPendingImport(false)
+            setLocalPendingImport(false)
             refetch()
           },
           onError: (error) => {
             console.error("Failed to import cashflow:", error)
             setPendingImport(false)
+            setLocalPendingImport(false)
+            refetch()
           },
         })
       } else {
         setPendingImport(false)
+        setLocalPendingImport(false)
       }
     }
-  }, [])
+  }, [pendingImport])
 
-  if (isLoading || importCashflow.isPending) {
+  if (isLoading || importCashflow.isPending || pendingImport) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse text-muted-foreground">
-          {importCashflow.isPending ? "Importing your cashflow..." : "Loading..."}
+          {importCashflow.isPending || pendingImport ? "Importing your cashflow..." : "Loading..."}
         </div>
       </div>
     )

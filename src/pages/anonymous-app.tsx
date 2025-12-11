@@ -299,6 +299,7 @@ export function AnonymousApp() {
   }
 
   const handleSaveToAccount = () => {
+    localStorage.removeItem("cashflow_current_id")
     setPendingImport(true)
     loginWithGoogle()
   }
