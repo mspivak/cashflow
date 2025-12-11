@@ -7,10 +7,9 @@ from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
-from authlib.integrations.starlette_client import OAuth
 from httpx import AsyncClient
 from jose import jwt
-from starlette.middleware.sessions import SessionMiddleware
+from itsdangerous import URLSafeTimedSerializer
 import libsql_client
 
 _raw_db_url = os.getenv("DATABASE_URL", "")
@@ -30,27 +29,7 @@ if not APP_URL:
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 30
 
-oauth = OAuth()
-
-if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
-    oauth.register(
-        name="google",
-        client_id=GOOGLE_CLIENT_ID,
-        client_secret=GOOGLE_CLIENT_SECRET,
-        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
-    )
-
-if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
-    oauth.register(
-        name="github",
-        client_id=GITHUB_CLIENT_ID,
-        client_secret=GITHUB_CLIENT_SECRET,
-        authorize_url="https://github.com/login/oauth/authorize",
-        access_token_url="https://github.com/login/oauth/access_token",
-        api_base_url="https://api.github.com/",
-        client_kwargs={"scope": "user:email"},
-    )
+state_serializer = URLSafeTimedSerializer(JWT_SECRET_KEY)
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
@@ -390,7 +369,6 @@ class MemberRoleUpdate(BaseModel):
 
 
 app = FastAPI(title="Cashflow Tracker API")
-app.add_middleware(SessionMiddleware, secret_key=JWT_SECRET_KEY)
 
 app.add_middleware(
     CORSMiddleware,
@@ -573,65 +551,113 @@ def check_cashflow_access(
 
 
 @app.get("/api/auth/login/{provider}")
-async def auth_login(provider: str, request: Request):
-    if provider not in ["google", "github"]:
+async def auth_login(provider: str):
+    if provider == "google":
+        if not GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=400, detail="Google OAuth not configured")
+        state = state_serializer.dumps({"provider": "google"})
+        redirect_uri = f"{APP_URL}/api/auth/callback/google"
+        params = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+        }
+        url = "https://accounts.google.com/o/oauth2/v2/auth?" + "&".join(
+            f"{k}={v}" for k, v in params.items()
+        )
+        return RedirectResponse(url=url)
+    elif provider == "github":
+        if not GITHUB_CLIENT_ID:
+            raise HTTPException(status_code=400, detail="GitHub OAuth not configured")
+        state = state_serializer.dumps({"provider": "github"})
+        redirect_uri = f"{APP_URL}/api/auth/callback/github"
+        params = {
+            "client_id": GITHUB_CLIENT_ID,
+            "redirect_uri": redirect_uri,
+            "scope": "user:email",
+            "state": state,
+        }
+        url = "https://github.com/login/oauth/authorize?" + "&".join(
+            f"{k}={v}" for k, v in params.items()
+        )
+        return RedirectResponse(url=url)
+    else:
         raise HTTPException(status_code=400, detail="Invalid provider")
-
-    client = oauth.create_client(provider)
-    if not client:
-        raise HTTPException(status_code=400, detail=f"{provider} OAuth not configured")
-
-    redirect_uri = f"{APP_URL}/api/auth/callback/{provider}"
-    return await client.authorize_redirect(request, redirect_uri)
 
 
 @app.get("/api/auth/callback/{provider}")
-async def auth_callback(provider: str, request: Request):
-    if provider not in ["google", "github"]:
-        raise HTTPException(status_code=400, detail="Invalid provider")
+async def auth_callback(provider: str, code: str, state: str):
+    try:
+        state_data = state_serializer.loads(state, max_age=600)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
 
-    client = oauth.create_client(provider)
-    if not client:
-        raise HTTPException(status_code=400, detail=f"{provider} OAuth not configured")
+    if state_data["provider"] != provider:
+        raise HTTPException(status_code=400, detail="State provider mismatch")
 
-    token = await client.authorize_access_token(request)
+    redirect_uri = f"{APP_URL}/api/auth/callback/{provider}"
 
-    if provider == "google":
-        user_info = token.get("userinfo")
-        if not user_info:
-            user_info = await client.userinfo(token=token)
-        email = user_info["email"]
-        name = user_info.get("name")
-        avatar_url = user_info.get("picture")
-        provider_id = user_info["sub"]
-    else:
-        access_token = token["access_token"]
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept": "application/json",
-        }
-        async with AsyncClient() as http_client:
-            user_resp = await http_client.get(
-                "https://api.github.com/user", headers=headers
+    async with AsyncClient() as http_client:
+        if provider == "google":
+            token_resp = await http_client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": redirect_uri,
+                },
             )
+            token_data = token_resp.json()
+            if "error" in token_data:
+                raise HTTPException(status_code=400, detail=token_data["error_description"])
+            access_token = token_data["access_token"]
+
+            user_resp = await http_client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            user_info = user_resp.json()
+            email = user_info["email"]
+            name = user_info.get("name")
+            avatar_url = user_info.get("picture")
+            provider_id = user_info["id"]
+
+        elif provider == "github":
+            token_resp = await http_client.post(
+                "https://github.com/login/oauth/access_token",
+                data={
+                    "client_id": GITHUB_CLIENT_ID,
+                    "client_secret": GITHUB_CLIENT_SECRET,
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+                headers={"Accept": "application/json"},
+            )
+            token_data = token_resp.json()
+            if "error" in token_data:
+                raise HTTPException(status_code=400, detail=token_data["error_description"])
+            access_token = token_data["access_token"]
+
+            headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+            user_resp = await http_client.get("https://api.github.com/user", headers=headers)
             user_data = user_resp.json()
             email = user_data.get("email")
             if not email:
-                emails_resp = await http_client.get(
-                    "https://api.github.com/user/emails", headers=headers
-                )
+                emails_resp = await http_client.get("https://api.github.com/user/emails", headers=headers)
                 emails = emails_resp.json()
-                primary = next(
-                    (e for e in emails if e["primary"]), emails[0] if emails else None
-                )
+                primary = next((e for e in emails if e["primary"]), emails[0] if emails else None)
                 email = primary["email"] if primary else None
-        if not email:
-            raise HTTPException(
-                status_code=400, detail="Could not get email from GitHub"
-            )
-        name = user_data.get("name") or user_data.get("login")
-        avatar_url = user_data.get("avatar_url")
-        provider_id = str(user_data["id"])
+            if not email:
+                raise HTTPException(status_code=400, detail="Could not get email from GitHub")
+            name = user_data.get("name") or user_data.get("login")
+            avatar_url = user_data.get("avatar_url")
+            provider_id = str(user_data["id"])
+        else:
+            raise HTTPException(status_code=400, detail="Invalid provider")
 
     user, is_new = get_or_create_user(email, name, avatar_url, provider, provider_id)
 
