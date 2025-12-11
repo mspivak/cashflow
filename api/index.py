@@ -6,6 +6,7 @@ from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 from httpx import AsyncClient
 from jose import jwt
@@ -370,6 +371,31 @@ class MemberRoleUpdate(BaseModel):
 
 app = FastAPI(title="Cashflow Tracker API")
 
+
+class ErrorHandlerMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            tb = traceback.extract_tb(exc.__traceback__)
+            app_frames = [f for f in tb if "/api/index.py" in f.filename]
+            if app_frames:
+                frame = app_frames[-1]
+                location = f"{frame.filename}:{frame.lineno} in {frame.name}"
+            else:
+                frame = tb[-1] if tb else None
+                location = f"{frame.filename}:{frame.lineno}" if frame else "unknown"
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": f"{type(exc).__name__}: {str(exc)}",
+                    "location": location,
+                },
+            )
+
+
+app.add_middleware(ErrorHandlerMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -377,25 +403,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(_request: Request, exc: Exception):
-    tb = traceback.extract_tb(exc.__traceback__)
-    app_frames = [f for f in tb if "/api/index.py" in f.filename]
-    if app_frames:
-        frame = app_frames[-1]
-        location = f"{frame.filename}:{frame.lineno} in {frame.name}"
-    else:
-        frame = tb[-1] if tb else None
-        location = f"{frame.filename}:{frame.lineno}" if frame else "unknown"
-    return JSONResponse(
-        status_code=422,
-        content={
-            "detail": f"{type(exc).__name__}: {str(exc)}",
-            "location": location,
-        },
-    )
 
 
 def create_jwt_token(user_id: str) -> str:
