@@ -30,18 +30,18 @@ function AuthenticatedApp() {
       const localCashflow = getLocalCashflow()
       if (localCashflow) {
         importCashflow.mutate(localCashflow, {
-          onSuccess: (importedCashflow) => {
+          onSuccess: async (importedCashflow) => {
             localStorage.setItem("cashflow_current_id", importedCashflow.id)
             clearLocalCashflow()
             setPendingImport(false)
+            await refetch()
             setLocalPendingImport(false)
-            refetch()
           },
-          onError: (error) => {
+          onError: async (error) => {
             console.error("Failed to import cashflow:", error)
             setPendingImport(false)
+            await refetch()
             setLocalPendingImport(false)
-            refetch()
           },
         })
       } else {
