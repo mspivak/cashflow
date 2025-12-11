@@ -29,7 +29,8 @@ function AuthenticatedApp() {
       const localCashflow = getLocalCashflow()
       if (localCashflow) {
         importCashflow.mutate(localCashflow, {
-          onSuccess: () => {
+          onSuccess: (importedCashflow) => {
+            localStorage.setItem("cashflow_current_id", importedCashflow.id)
             clearLocalCashflow()
             setPendingImport(false)
             refetch()
