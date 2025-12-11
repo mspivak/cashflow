@@ -2190,3 +2190,18 @@ def import_cashflow(data: CashflowImport, request: Request):
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/api/debug/turso")
+async def debug_turso():
+    url = DATABASE_URL.replace("libsql://", "https://")
+    headers = {"Authorization": f"Bearer {DATABASE_AUTH_TOKEN}"}
+    body = {
+        "requests": [
+            {"type": "execute", "stmt": {"sql": "SELECT 1"}},
+            {"type": "close"}
+        ]
+    }
+    async with AsyncClient() as client:
+        resp = await client.post(f"{url}/v2/pipeline", json=body, headers=headers)
+        return {"status": resp.status_code, "body": resp.json()}
