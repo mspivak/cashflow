@@ -380,14 +380,20 @@ app.add_middleware(
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
-    last_lines = "".join(tb_lines[-3:])
+async def global_exception_handler(_request: Request, exc: Exception):
+    tb = traceback.extract_tb(exc.__traceback__)
+    app_frames = [f for f in tb if "/api/index.py" in f.filename]
+    if app_frames:
+        frame = app_frames[-1]
+        location = f"{frame.filename}:{frame.lineno} in {frame.name}"
+    else:
+        frame = tb[-1] if tb else None
+        location = f"{frame.filename}:{frame.lineno}" if frame else "unknown"
     return JSONResponse(
-        status_code=500,
+        status_code=422,
         content={
             "detail": f"{type(exc).__name__}: {str(exc)}",
-            "traceback": last_lines,
+            "location": location,
         },
     )
 
