@@ -590,14 +590,15 @@ async def auth_callback(provider: str, request: Request):
         httponly=True,
         secure=is_secure,
         max_age=JWT_EXPIRATION_DAYS * 24 * 60 * 60,
-        samesite="lax"
+        samesite="lax",
+        path="/"
     )
     return response
 
 
 @app.post("/api/auth/logout")
 def auth_logout(response: Response):
-    response.delete_cookie("session_token")
+    response.delete_cookie("session_token", path="/")
     return {"message": "Logged out"}
 
 
