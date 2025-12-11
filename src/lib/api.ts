@@ -47,10 +47,6 @@ export function loginWithGoogle(): void {
   window.location.href = `${API_BASE}/auth/login/google`
 }
 
-export function loginWithGithub(): void {
-  window.location.href = `${API_BASE}/auth/login/github`
-}
-
 export async function fetchCashflows(): Promise<Cashflow[]> {
   const response = await fetch(`${API_BASE}/cashflows`, { credentials: "include" })
   return handleResponse<Cashflow[]>(response)

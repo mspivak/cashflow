@@ -17,8 +17,6 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
 APP_URL = os.getenv("APP_URL")
 if not APP_URL:
@@ -501,21 +499,6 @@ async def auth_login(provider: str):
             f"{k}={v}" for k, v in params.items()
         )
         return RedirectResponse(url=url)
-    elif provider == "github":
-        if not GITHUB_CLIENT_ID:
-            raise HTTPException(status_code=400, detail="GitHub OAuth not configured")
-        state = state_serializer.dumps({"provider": "github"})
-        redirect_uri = f"{APP_URL}/api/auth/callback/github"
-        params = {
-            "client_id": GITHUB_CLIENT_ID,
-            "redirect_uri": redirect_uri,
-            "scope": "user:email",
-            "state": state,
-        }
-        url = "https://github.com/login/oauth/authorize?" + "&".join(
-            f"{k}={v}" for k, v in params.items()
-        )
-        return RedirectResponse(url=url)
     else:
         raise HTTPException(status_code=400, detail="Invalid provider")
 
@@ -558,37 +541,6 @@ async def auth_callback(provider: str, code: str, state: str):
             name = user_info.get("name")
             avatar_url = user_info.get("picture")
             provider_id = user_info["id"]
-
-        elif provider == "github":
-            token_resp = await http_client.post(
-                "https://github.com/login/oauth/access_token",
-                data={
-                    "client_id": GITHUB_CLIENT_ID,
-                    "client_secret": GITHUB_CLIENT_SECRET,
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                },
-                headers={"Accept": "application/json"},
-            )
-            token_data = token_resp.json()
-            if "error" in token_data:
-                raise HTTPException(status_code=400, detail=token_data["error_description"])
-            access_token = token_data["access_token"]
-
-            headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
-            user_resp = await http_client.get("https://api.github.com/user", headers=headers)
-            user_data = user_resp.json()
-            email = user_data.get("email")
-            if not email:
-                emails_resp = await http_client.get("https://api.github.com/user/emails", headers=headers)
-                emails = emails_resp.json()
-                primary = next((e for e in emails if e["primary"]), emails[0] if emails else None)
-                email = primary["email"] if primary else None
-            if not email:
-                raise HTTPException(status_code=400, detail="Could not get email from GitHub")
-            name = user_data.get("name") or user_data.get("login")
-            avatar_url = user_data.get("avatar_url")
-            provider_id = str(user_data["id"])
         else:
             raise HTTPException(status_code=400, detail="Invalid provider")
 
