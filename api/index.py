@@ -13,10 +13,7 @@ from jose import jwt
 from itsdangerous import URLSafeTimedSerializer
 import libsql_client
 
-_raw_db_url = os.getenv("DATABASE_URL", "")
-DATABASE_URL = (
-    _raw_db_url.replace("libsql://", "https://") if _raw_db_url else ""
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 DATABASE_AUTH_TOKEN = os.getenv("DATABASE_AUTH_TOKEN", "")
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
