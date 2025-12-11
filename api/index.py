@@ -20,7 +20,9 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
-APP_URL = os.getenv("APP_URL", "http://localhost:5173")
+APP_URL = os.getenv("APP_URL")
+if not APP_URL:
+    raise RuntimeError("APP_URL environment variable is required")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 30
 
