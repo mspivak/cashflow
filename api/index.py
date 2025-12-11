@@ -1,11 +1,12 @@
 import os
 import uuid
 import sqlite3
+import traceback
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from authlib.integrations.starlette_client import OAuth
 from jose import jwt, JWTError
@@ -385,6 +386,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
+    last_lines = ''.join(tb_lines[-3:])
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {str(exc)}", "traceback": last_lines}
+    )
 
 
 def create_jwt_token(user_id: str) -> str:
