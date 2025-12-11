@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from authlib.integrations.starlette_client import OAuth
+from httpx import AsyncClient
 from jose import jwt, JWTError
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -572,14 +573,17 @@ async def auth_callback(provider: str, request: Request):
         avatar_url = user_info.get("picture")
         provider_id = user_info["sub"]
     else:
-        resp = await client.get("user", token=token)
-        user_data = resp.json()
-        email = user_data.get("email")
-        if not email:
-            emails_resp = await client.get("user/emails", token=token)
-            emails = emails_resp.json()
-            primary = next((e for e in emails if e["primary"]), emails[0] if emails else None)
-            email = primary["email"] if primary else None
+        access_token = token["access_token"]
+        headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+        async with AsyncClient() as http_client:
+            user_resp = await http_client.get("https://api.github.com/user", headers=headers)
+            user_data = user_resp.json()
+            email = user_data.get("email")
+            if not email:
+                emails_resp = await http_client.get("https://api.github.com/user/emails", headers=headers)
+                emails = emails_resp.json()
+                primary = next((e for e in emails if e["primary"]), emails[0] if emails else None)
+                email = primary["email"] if primary else None
         if not email:
             raise HTTPException(status_code=400, detail="Could not get email from GitHub")
         name = user_data.get("name") or user_data.get("login")
