@@ -10,11 +10,14 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from authlib.integrations.starlette_client import OAuth
 from httpx import AsyncClient
-from jose import jwt, JWTError
+from jose import jwt
 from starlette.middleware.sessions import SessionMiddleware
+import libsql_client
 
 _raw_turso_url = os.getenv("TURSO_DATABASE_URL", "")
-TURSO_DATABASE_URL = _raw_turso_url.replace("libsql://", "https://") if _raw_turso_url else ""
+TURSO_DATABASE_URL = (
+    _raw_turso_url.replace("libsql://", "https://") if _raw_turso_url else ""
+)
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "")
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -38,7 +41,7 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"}
+        client_kwargs={"scope": "openid email profile"},
     )
 
 if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
@@ -49,13 +52,16 @@ if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
         authorize_url="https://github.com/login/oauth/authorize",
         access_token_url="https://github.com/login/oauth/access_token",
         api_base_url="https://api.github.com/",
-        client_kwargs={"scope": "user:email"}
+        client_kwargs={"scope": "user:email"},
     )
 
 libsql_client = None
+_turso_client = None
 if TURSO_DATABASE_URL:
     try:
-        import libsql_client
+        _turso_client = libsql_client.create_client_sync(
+            url=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN
+        )
     except ImportError:
         TURSO_DATABASE_URL = ""
 
@@ -111,7 +117,9 @@ class DBWrapper:
 
     def fetchall(self):
         if self.is_turso:
-            return [Row(self._last_result.columns, row) for row in self._last_result.rows]
+            return [
+                Row(self._last_result.columns, row) for row in self._last_result.rows
+            ]
         return self._cursor.fetchall()
 
     def commit(self):
@@ -126,14 +134,8 @@ class DBWrapper:
 def get_db():
     global _db_initialized
 
-    if TURSO_DATABASE_URL:
-        if not TURSO_AUTH_TOKEN:
-            raise RuntimeError("TURSO_AUTH_TOKEN is required when TURSO_DATABASE_URL is set")
-        client = libsql_client.create_client_sync(
-            url=TURSO_DATABASE_URL,
-            auth_token=TURSO_AUTH_TOKEN
-        )
-        wrapper = DBWrapper(client, is_turso=True)
+    if TURSO_DATABASE_URL and _turso_client:
+        wrapper = DBWrapper(_turso_client, is_turso=True)
         if not _db_initialized:
             init_db_tables(wrapper)
             _db_initialized = True
@@ -165,7 +167,8 @@ DEFAULT_CATEGORIES = [
 def init_db_tables(conn):
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
@@ -176,9 +179,11 @@ def init_db_tables(conn):
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(provider, provider_id)
         )
-    """)
+    """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS cashflows (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -189,9 +194,11 @@ def init_db_tables(conn):
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS cashflow_members (
             id TEXT PRIMARY KEY,
             cashflow_id TEXT NOT NULL REFERENCES cashflows(id) ON DELETE CASCADE,
@@ -200,9 +207,11 @@ def init_db_tables(conn):
             invited_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(cashflow_id, user_id)
         )
-    """)
+    """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS categories (
             id TEXT PRIMARY KEY,
             cashflow_id TEXT NOT NULL REFERENCES cashflows(id) ON DELETE CASCADE,
@@ -212,9 +221,11 @@ def init_db_tables(conn):
             color TEXT,
             UNIQUE(cashflow_id, name, type)
         )
-    """)
+    """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS plans (
             id TEXT PRIMARY KEY,
             cashflow_id TEXT NOT NULL REFERENCES cashflows(id) ON DELETE CASCADE,
@@ -230,9 +241,11 @@ def init_db_tables(conn):
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS entries (
             id TEXT PRIMARY KEY,
             plan_id TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
@@ -242,16 +255,19 @@ def init_db_tables(conn):
             notes TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS settings (
             cashflow_id TEXT NOT NULL REFERENCES cashflows(id) ON DELETE CASCADE,
             key TEXT NOT NULL,
             value TEXT NOT NULL,
             PRIMARY KEY (cashflow_id, key)
         )
-    """)
+    """
+    )
 
     conn.commit()
 
@@ -262,8 +278,10 @@ class CategoryBase(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
 
+
 class CategoryResponse(CategoryBase):
     id: str
+
 
 class PlanBase(BaseModel):
     category_id: str
@@ -275,8 +293,10 @@ class PlanBase(BaseModel):
     end_month: Optional[str] = None
     notes: Optional[str] = None
 
+
 class PlanCreate(PlanBase):
     pass
+
 
 class PlanUpdate(BaseModel):
     category_id: Optional[str] = None
@@ -289,12 +309,14 @@ class PlanUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
 
+
 class PlanResponse(PlanBase):
     id: str
     status: str
     created_at: str
     updated_at: str
     category: CategoryResponse
+
 
 class EntryBase(BaseModel):
     plan_id: str
@@ -303,18 +325,22 @@ class EntryBase(BaseModel):
     date: Optional[str] = None
     notes: Optional[str] = None
 
+
 class EntryCreate(EntryBase):
     pass
+
 
 class EntryUpdate(BaseModel):
     amount: Optional[float] = None
     date: Optional[str] = None
     notes: Optional[str] = None
 
+
 class EntryResponse(EntryBase):
     id: str
     created_at: str
     plan: PlanResponse
+
 
 class SettingResponse(BaseModel):
     key: str
@@ -392,10 +418,13 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
-    last_lines = ''.join(tb_lines[-3:])
+    last_lines = "".join(tb_lines[-3:])
     return JSONResponse(
         status_code=500,
-        content={"detail": f"{type(exc).__name__}: {str(exc)}", "traceback": last_lines}
+        content={
+            "detail": f"{type(exc).__name__}: {str(exc)}",
+            "traceback": last_lines,
+        },
     )
 
 
@@ -431,7 +460,7 @@ def get_user_by_id(user_id: str, conn=None):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, email, name, avatar_url, provider, created_at FROM users WHERE id = ?",
-        (user_id,)
+        (user_id,),
     )
     row = cursor.fetchone()
     if should_close:
@@ -441,13 +470,19 @@ def get_user_by_id(user_id: str, conn=None):
     return dict(row)
 
 
-def get_or_create_user(email: str, name: Optional[str], avatar_url: Optional[str], provider: str, provider_id: str):
+def get_or_create_user(
+    email: str,
+    name: Optional[str],
+    avatar_url: Optional[str],
+    provider: str,
+    provider_id: str,
+):
     conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute(
         "SELECT id, email, name, avatar_url, provider, created_at FROM users WHERE provider = ? AND provider_id = ?",
-        (provider, provider_id)
+        (provider, provider_id),
     )
     row = cursor.fetchone()
 
@@ -460,13 +495,15 @@ def get_or_create_user(email: str, name: Optional[str], avatar_url: Optional[str
     existing = cursor.fetchone()
     if existing:
         conn.close()
-        raise HTTPException(status_code=400, detail="Email already registered with different provider")
+        raise HTTPException(
+            status_code=400, detail="Email already registered with different provider"
+        )
 
     user_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     cursor.execute(
         "INSERT INTO users (id, email, name, avatar_url, provider, provider_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (user_id, email, name, avatar_url, provider, provider_id, now)
+        (user_id, email, name, avatar_url, provider, provider_id, now),
     )
     conn.commit()
 
@@ -476,7 +513,7 @@ def get_or_create_user(email: str, name: Optional[str], avatar_url: Optional[str
         "name": name,
         "avatar_url": avatar_url,
         "provider": provider,
-        "created_at": now
+        "created_at": now,
     }
     conn.close()
     return user, True
@@ -493,24 +530,31 @@ def create_default_cashflow(user_id: str, user_name: Optional[str]):
 
     cursor.execute(
         "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-        (cashflow_id, name, None, user_id, share_id, now, now)
+        (cashflow_id, name, None, user_id, share_id, now, now),
     )
 
     member_id = str(uuid.uuid4())
     cursor.execute(
         "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, 'owner', ?)",
-        (member_id, cashflow_id, user_id, now)
+        (member_id, cashflow_id, user_id, now),
     )
 
     for cat in DEFAULT_CATEGORIES:
         cursor.execute(
             "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), cashflow_id, cat["name"], cat["type"], cat["icon"], cat["color"])
+            (
+                str(uuid.uuid4()),
+                cashflow_id,
+                cat["name"],
+                cat["type"],
+                cat["icon"],
+                cat["color"],
+            ),
         )
 
     cursor.execute(
         "INSERT INTO settings (cashflow_id, key, value) VALUES (?, 'starting_balance', '0')",
-        (cashflow_id,)
+        (cashflow_id,),
     )
 
     conn.commit()
@@ -518,7 +562,9 @@ def create_default_cashflow(user_id: str, user_name: Optional[str]):
     return cashflow_id
 
 
-def check_cashflow_access(user_id: str, cashflow_id: str, required_roles: List[str] = None):
+def check_cashflow_access(
+    user_id: str, cashflow_id: str, required_roles: List[str] = None
+):
     if required_roles is None:
         required_roles = ["owner", "editor", "viewer"]
 
@@ -526,7 +572,7 @@ def check_cashflow_access(user_id: str, cashflow_id: str, required_roles: List[s
     cursor = conn.cursor()
     cursor.execute(
         "SELECT role FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
-        (cashflow_id, user_id)
+        (cashflow_id, user_id),
     )
     row = cursor.fetchone()
     conn.close()
@@ -574,18 +620,29 @@ async def auth_callback(provider: str, request: Request):
         provider_id = user_info["sub"]
     else:
         access_token = token["access_token"]
-        headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        }
         async with AsyncClient() as http_client:
-            user_resp = await http_client.get("https://api.github.com/user", headers=headers)
+            user_resp = await http_client.get(
+                "https://api.github.com/user", headers=headers
+            )
             user_data = user_resp.json()
             email = user_data.get("email")
             if not email:
-                emails_resp = await http_client.get("https://api.github.com/user/emails", headers=headers)
+                emails_resp = await http_client.get(
+                    "https://api.github.com/user/emails", headers=headers
+                )
                 emails = emails_resp.json()
-                primary = next((e for e in emails if e["primary"]), emails[0] if emails else None)
+                primary = next(
+                    (e for e in emails if e["primary"]), emails[0] if emails else None
+                )
                 email = primary["email"] if primary else None
         if not email:
-            raise HTTPException(status_code=400, detail="Could not get email from GitHub")
+            raise HTTPException(
+                status_code=400, detail="Could not get email from GitHub"
+            )
         name = user_data.get("name") or user_data.get("login")
         avatar_url = user_data.get("avatar_url")
         provider_id = str(user_data["id"])
@@ -606,7 +663,7 @@ async def auth_callback(provider: str, request: Request):
         secure=is_secure,
         max_age=JWT_EXPIRATION_DAYS * 24 * 60 * 60,
         samesite="lax",
-        path="/"
+        path="/",
     )
     return response
 
@@ -642,7 +699,7 @@ def list_cashflows(request: Request):
            JOIN cashflow_members cm ON c.id = cm.cashflow_id
            WHERE cm.user_id = ?
            ORDER BY c.name""",
-        (user_id,)
+        (user_id,),
     )
     rows = cursor.fetchall()
     conn.close()
@@ -663,24 +720,31 @@ def create_cashflow(cashflow: CashflowCreate, request: Request):
 
     cursor.execute(
         "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-        (cashflow_id, cashflow.name, cashflow.description, user_id, share_id, now, now)
+        (cashflow_id, cashflow.name, cashflow.description, user_id, share_id, now, now),
     )
 
     member_id = str(uuid.uuid4())
     cursor.execute(
         "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, 'owner', ?)",
-        (member_id, cashflow_id, user_id, now)
+        (member_id, cashflow_id, user_id, now),
     )
 
     for cat in DEFAULT_CATEGORIES:
         cursor.execute(
             "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), cashflow_id, cat["name"], cat["type"], cat["icon"], cat["color"])
+            (
+                str(uuid.uuid4()),
+                cashflow_id,
+                cat["name"],
+                cat["type"],
+                cat["icon"],
+                cat["color"],
+            ),
         )
 
     cursor.execute(
         "INSERT INTO settings (cashflow_id, key, value) VALUES (?, 'starting_balance', '0')",
-        (cashflow_id,)
+        (cashflow_id,),
     )
 
     conn.commit()
@@ -695,7 +759,7 @@ def create_cashflow(cashflow: CashflowCreate, request: Request):
         "share_id": share_id,
         "is_public": False,
         "created_at": now,
-        "updated_at": now
+        "updated_at": now,
     }
 
 
@@ -708,7 +772,7 @@ def get_cashflow(cashflow_id: str, request: Request):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
-        (cashflow_id,)
+        (cashflow_id,),
     )
     row = cursor.fetchone()
     conn.close()
@@ -745,14 +809,13 @@ def update_cashflow(cashflow_id: str, cashflow: CashflowUpdate, request: Request
         params.append(cashflow_id)
 
         cursor.execute(
-            f"UPDATE cashflows SET {', '.join(updates)} WHERE id = ?",
-            params
+            f"UPDATE cashflows SET {', '.join(updates)} WHERE id = ?", params
         )
         conn.commit()
 
     cursor.execute(
         "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
-        (cashflow_id,)
+        (cashflow_id,),
     )
     row = cursor.fetchone()
     conn.close()
@@ -772,7 +835,10 @@ def delete_cashflow(cashflow_id: str, request: Request):
     cursor = conn.cursor()
 
     cursor.execute("DELETE FROM settings WHERE cashflow_id = ?", (cashflow_id,))
-    cursor.execute("DELETE FROM entries WHERE plan_id IN (SELECT id FROM plans WHERE cashflow_id = ?)", (cashflow_id,))
+    cursor.execute(
+        "DELETE FROM entries WHERE plan_id IN (SELECT id FROM plans WHERE cashflow_id = ?)",
+        (cashflow_id,),
+    )
     cursor.execute("DELETE FROM plans WHERE cashflow_id = ?", (cashflow_id,))
     cursor.execute("DELETE FROM categories WHERE cashflow_id = ?", (cashflow_id,))
     cursor.execute("DELETE FROM cashflow_members WHERE cashflow_id = ?", (cashflow_id,))
@@ -795,7 +861,7 @@ def list_cashflow_members(cashflow_id: str, request: Request):
            JOIN users u ON cm.user_id = u.id
            WHERE cm.cashflow_id = ?
            ORDER BY cm.role, u.name""",
-        (cashflow_id,)
+        (cashflow_id,),
     )
     rows = cursor.fetchall()
     conn.close()
@@ -809,23 +875,29 @@ def invite_member(cashflow_id: str, member: CashflowMemberBase, request: Request
     check_cashflow_access(user_id, cashflow_id, ["owner"])
 
     if member.role not in ["editor", "viewer"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be 'editor' or 'viewer'")
+        raise HTTPException(
+            status_code=400, detail="Invalid role. Must be 'editor' or 'viewer'"
+        )
 
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, name, avatar_url FROM users WHERE email = ?", (member.email,))
+    cursor.execute(
+        "SELECT id, name, avatar_url FROM users WHERE email = ?", (member.email,)
+    )
     user_row = cursor.fetchone()
 
     if not user_row:
         conn.close()
-        raise HTTPException(status_code=404, detail="User not found. They must sign up first.")
+        raise HTTPException(
+            status_code=404, detail="User not found. They must sign up first."
+        )
 
     target_user_id = user_row["id"]
 
     cursor.execute(
         "SELECT id FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
-        (cashflow_id, target_user_id)
+        (cashflow_id, target_user_id),
     )
     if cursor.fetchone():
         conn.close()
@@ -836,7 +908,7 @@ def invite_member(cashflow_id: str, member: CashflowMemberBase, request: Request
 
     cursor.execute(
         "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, ?, ?)",
-        (member_id, cashflow_id, target_user_id, member.role, now)
+        (member_id, cashflow_id, target_user_id, member.role, now),
     )
     conn.commit()
     conn.close()
@@ -848,24 +920,31 @@ def invite_member(cashflow_id: str, member: CashflowMemberBase, request: Request
         "name": user_row["name"],
         "avatar_url": user_row["avatar_url"],
         "role": member.role,
-        "invited_at": now
+        "invited_at": now,
     }
 
 
 @app.put("/api/cashflows/{cashflow_id}/members/{member_user_id}")
-def update_member_role(cashflow_id: str, member_user_id: str, role_update: MemberRoleUpdate, request: Request):
+def update_member_role(
+    cashflow_id: str,
+    member_user_id: str,
+    role_update: MemberRoleUpdate,
+    request: Request,
+):
     user_id = require_auth(request)
     check_cashflow_access(user_id, cashflow_id, ["owner"])
 
     if role_update.role not in ["editor", "viewer"]:
-        raise HTTPException(status_code=400, detail="Invalid role. Must be 'editor' or 'viewer'")
+        raise HTTPException(
+            status_code=400, detail="Invalid role. Must be 'editor' or 'viewer'"
+        )
 
     conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute(
         "SELECT role FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
-        (cashflow_id, member_user_id)
+        (cashflow_id, member_user_id),
     )
     row = cursor.fetchone()
 
@@ -879,7 +958,7 @@ def update_member_role(cashflow_id: str, member_user_id: str, role_update: Membe
 
     cursor.execute(
         "UPDATE cashflow_members SET role = ? WHERE cashflow_id = ? AND user_id = ?",
-        (role_update.role, cashflow_id, member_user_id)
+        (role_update.role, cashflow_id, member_user_id),
     )
     conn.commit()
     conn.close()
@@ -897,7 +976,7 @@ def remove_member(cashflow_id: str, member_user_id: str, request: Request):
 
     cursor.execute(
         "SELECT role FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
-        (cashflow_id, member_user_id)
+        (cashflow_id, member_user_id),
     )
     row = cursor.fetchone()
 
@@ -911,7 +990,7 @@ def remove_member(cashflow_id: str, member_user_id: str, request: Request):
 
     cursor.execute(
         "DELETE FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
-        (cashflow_id, member_user_id)
+        (cashflow_id, member_user_id),
     )
     conn.commit()
     conn.close()
@@ -926,7 +1005,7 @@ def list_categories(cashflow_id: str, request: Request):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, cashflow_id, name, type, icon, color FROM categories WHERE cashflow_id = ? ORDER BY type, name",
-        (cashflow_id,)
+        (cashflow_id,),
     )
     rows = cursor.fetchall()
     conn.close()
@@ -943,7 +1022,14 @@ def create_category(cashflow_id: str, category: CategoryBase, request: Request):
     cat_id = str(uuid.uuid4())
     cursor.execute(
         "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
-        (cat_id, cashflow_id, category.name, category.type, category.icon, category.color)
+        (
+            cat_id,
+            cashflow_id,
+            category.name,
+            category.type,
+            category.icon,
+            category.color,
+        ),
     )
     conn.commit()
     conn.close()
@@ -962,7 +1048,7 @@ def get_plan_by_id(plan_id: str, conn=None):
            c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
            FROM plans p JOIN categories c ON p.category_id = c.id
            WHERE p.id = ?""",
-        (plan_id,)
+        (plan_id,),
     )
     row = cursor.fetchone()
     if should_close:
@@ -995,7 +1081,12 @@ def get_plan_by_id(plan_id: str, conn=None):
 
 
 @app.get("/api/cashflows/{cashflow_id}/plans")
-def list_plans(cashflow_id: str, request: Request, status: Optional[str] = None, category_id: Optional[str] = None):
+def list_plans(
+    cashflow_id: str,
+    request: Request,
+    status: Optional[str] = None,
+    category_id: Optional[str] = None,
+):
     user_id = require_auth(request)
     check_cashflow_access(user_id, cashflow_id)
 
@@ -1028,28 +1119,30 @@ def list_plans(cashflow_id: str, request: Request, status: Optional[str] = None,
 
     plans = []
     for row in rows:
-        plans.append({
-            "id": row["id"],
-            "cashflow_id": row["cashflow_id"],
-            "category_id": row["category_id"],
-            "name": row["name"],
-            "expected_amount": row["expected_amount"],
-            "frequency": row["frequency"],
-            "expected_day": row["expected_day"],
-            "start_month": row["start_month"],
-            "end_month": row["end_month"],
-            "status": row["status"],
-            "notes": row["notes"],
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-            "category": {
-                "id": row["cat_id"],
-                "name": row["cat_name"],
-                "type": row["cat_type"],
-                "icon": row["cat_icon"],
-                "color": row["cat_color"],
-            },
-        })
+        plans.append(
+            {
+                "id": row["id"],
+                "cashflow_id": row["cashflow_id"],
+                "category_id": row["category_id"],
+                "name": row["name"],
+                "expected_amount": row["expected_amount"],
+                "frequency": row["frequency"],
+                "expected_day": row["expected_day"],
+                "start_month": row["start_month"],
+                "end_month": row["end_month"],
+                "status": row["status"],
+                "notes": row["notes"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "category": {
+                    "id": row["cat_id"],
+                    "name": row["cat_name"],
+                    "type": row["cat_type"],
+                    "icon": row["cat_icon"],
+                    "color": row["cat_color"],
+                },
+            }
+        )
 
     return plans
 
@@ -1068,8 +1161,20 @@ def create_plan(cashflow_id: str, plan: PlanCreate, request: Request):
         """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
            expected_day, start_month, end_month, status, notes, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)""",
-        (plan_id, cashflow_id, plan.category_id, plan.name, plan.expected_amount, plan.frequency,
-         plan.expected_day, plan.start_month, plan.end_month, plan.notes, now, now)
+        (
+            plan_id,
+            cashflow_id,
+            plan.category_id,
+            plan.name,
+            plan.expected_amount,
+            plan.frequency,
+            plan.expected_day,
+            plan.start_month,
+            plan.end_month,
+            plan.notes,
+            now,
+            now,
+        ),
     )
     conn.commit()
     result = get_plan_by_id(plan_id, conn)
@@ -1097,7 +1202,9 @@ def update_plan(cashflow_id: str, plan_id: str, plan: PlanUpdate, request: Reque
     cursor = conn.cursor()
     now = date.today().isoformat()
 
-    cursor.execute("SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id))
+    cursor.execute(
+        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+    )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -1115,10 +1222,7 @@ def update_plan(cashflow_id: str, plan_id: str, plan: PlanUpdate, request: Reque
         params.append(now)
         params.append(plan_id)
 
-        cursor.execute(
-            f"UPDATE plans SET {', '.join(updates)} WHERE id = ?",
-            params
-        )
+        cursor.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", params)
         conn.commit()
 
     result = get_plan_by_id(plan_id, conn)
@@ -1133,7 +1237,9 @@ def delete_plan(cashflow_id: str, plan_id: str, request: Request):
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id))
+    cursor.execute(
+        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+    )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -1159,7 +1265,7 @@ def get_entry_by_id(entry_id: str, conn=None):
            JOIN plans p ON e.plan_id = p.id
            JOIN categories c ON p.category_id = c.id
            WHERE e.id = ?""",
-        (entry_id,)
+        (entry_id,),
     )
     row = cursor.fetchone()
     if should_close:
@@ -1202,7 +1308,13 @@ def get_entry_by_id(entry_id: str, conn=None):
 
 
 @app.get("/api/cashflows/{cashflow_id}/entries")
-def list_entries(cashflow_id: str, request: Request, from_month: Optional[str] = None, to_month: Optional[str] = None, plan_id: Optional[str] = None):
+def list_entries(
+    cashflow_id: str,
+    request: Request,
+    from_month: Optional[str] = None,
+    to_month: Optional[str] = None,
+    plan_id: Optional[str] = None,
+):
     user_id = require_auth(request)
     check_cashflow_access(user_id, cashflow_id)
 
@@ -1240,37 +1352,39 @@ def list_entries(cashflow_id: str, request: Request, from_month: Optional[str] =
 
     entries = []
     for row in rows:
-        entries.append({
-            "id": row["id"],
-            "plan_id": row["plan_id"],
-            "month_year": row["month_year"],
-            "amount": row["amount"],
-            "date": row["date"],
-            "notes": row["notes"],
-            "created_at": row["created_at"],
-            "plan": {
-                "id": row["p_id"],
-                "cashflow_id": row["cashflow_id"],
-                "category_id": row["category_id"],
-                "name": row["plan_name"],
-                "expected_amount": row["expected_amount"],
-                "frequency": row["frequency"],
-                "expected_day": row["expected_day"],
-                "start_month": row["start_month"],
-                "end_month": row["end_month"],
-                "status": row["plan_status"],
-                "notes": row["plan_notes"],
-                "created_at": row["plan_created_at"],
-                "updated_at": row["plan_updated_at"],
-                "category": {
-                    "id": row["cat_id"],
-                    "name": row["cat_name"],
-                    "type": row["cat_type"],
-                    "icon": row["cat_icon"],
-                    "color": row["cat_color"],
+        entries.append(
+            {
+                "id": row["id"],
+                "plan_id": row["plan_id"],
+                "month_year": row["month_year"],
+                "amount": row["amount"],
+                "date": row["date"],
+                "notes": row["notes"],
+                "created_at": row["created_at"],
+                "plan": {
+                    "id": row["p_id"],
+                    "cashflow_id": row["cashflow_id"],
+                    "category_id": row["category_id"],
+                    "name": row["plan_name"],
+                    "expected_amount": row["expected_amount"],
+                    "frequency": row["frequency"],
+                    "expected_day": row["expected_day"],
+                    "start_month": row["start_month"],
+                    "end_month": row["end_month"],
+                    "status": row["plan_status"],
+                    "notes": row["plan_notes"],
+                    "created_at": row["plan_created_at"],
+                    "updated_at": row["plan_updated_at"],
+                    "category": {
+                        "id": row["cat_id"],
+                        "name": row["cat_name"],
+                        "type": row["cat_type"],
+                        "icon": row["cat_icon"],
+                        "color": row["cat_color"],
+                    },
                 },
-            },
-        })
+            }
+        )
 
     return entries
 
@@ -1285,7 +1399,10 @@ def create_entry(cashflow_id: str, entry: EntryCreate, request: Request):
     entry_id = str(uuid.uuid4())
     now = date.today().isoformat()
 
-    cursor.execute("SELECT id, frequency FROM plans WHERE id = ? AND cashflow_id = ?", (entry.plan_id, cashflow_id))
+    cursor.execute(
+        "SELECT id, frequency FROM plans WHERE id = ? AND cashflow_id = ?",
+        (entry.plan_id, cashflow_id),
+    )
     plan_row = cursor.fetchone()
     if not plan_row:
         conn.close()
@@ -1294,13 +1411,21 @@ def create_entry(cashflow_id: str, entry: EntryCreate, request: Request):
     cursor.execute(
         """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (entry_id, entry.plan_id, entry.month_year, entry.amount, entry.date, entry.notes, now)
+        (
+            entry_id,
+            entry.plan_id,
+            entry.month_year,
+            entry.amount,
+            entry.date,
+            entry.notes,
+            now,
+        ),
     )
 
     if plan_row["frequency"] == "one-time":
         cursor.execute(
             "UPDATE plans SET status = 'completed', updated_at = ? WHERE id = ?",
-            (now, entry.plan_id)
+            (now, entry.plan_id),
         )
 
     conn.commit()
@@ -1332,7 +1457,7 @@ def update_entry(cashflow_id: str, entry_id: str, entry: EntryUpdate, request: R
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
            WHERE e.id = ? AND p.cashflow_id = ?""",
-        (entry_id, cashflow_id)
+        (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
         conn.close()
@@ -1348,10 +1473,7 @@ def update_entry(cashflow_id: str, entry_id: str, entry: EntryUpdate, request: R
 
     if updates:
         params.append(entry_id)
-        cursor.execute(
-            f"UPDATE entries SET {', '.join(updates)} WHERE id = ?",
-            params
-        )
+        cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id = ?", params)
         conn.commit()
 
     result = get_entry_by_id(entry_id, conn)
@@ -1370,7 +1492,7 @@ def delete_entry(cashflow_id: str, entry_id: str, request: Request):
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
            WHERE e.id = ? AND p.cashflow_id = ?""",
-        (entry_id, cashflow_id)
+        (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
         conn.close()
@@ -1388,7 +1510,9 @@ def list_settings(cashflow_id: str, request: Request):
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM settings WHERE cashflow_id = ?", (cashflow_id,))
+    cursor.execute(
+        "SELECT key, value FROM settings WHERE cashflow_id = ?", (cashflow_id,)
+    )
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -1403,11 +1527,19 @@ def update_setting(cashflow_id: str, key: str, setting: dict, request: Request):
     cursor = conn.cursor()
     value = setting["value"]
 
-    cursor.execute("SELECT key FROM settings WHERE cashflow_id = ? AND key = ?", (cashflow_id, key))
+    cursor.execute(
+        "SELECT key FROM settings WHERE cashflow_id = ? AND key = ?", (cashflow_id, key)
+    )
     if cursor.fetchone():
-        cursor.execute("UPDATE settings SET value = ? WHERE cashflow_id = ? AND key = ?", (value, cashflow_id, key))
+        cursor.execute(
+            "UPDATE settings SET value = ? WHERE cashflow_id = ? AND key = ?",
+            (value, cashflow_id, key),
+        )
     else:
-        cursor.execute("INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)", (cashflow_id, key, value))
+        cursor.execute(
+            "INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)",
+            (cashflow_id, key, value),
+        )
 
     conn.commit()
     conn.close()
@@ -1415,7 +1547,9 @@ def update_setting(cashflow_id: str, key: str, setting: dict, request: Request):
 
 
 @app.put("/api/cashflows/{cashflow_id}/share")
-def update_share_settings(cashflow_id: str, settings: CashflowShareSettings, request: Request):
+def update_share_settings(
+    cashflow_id: str, settings: CashflowShareSettings, request: Request
+):
     user_id = require_auth(request)
     check_cashflow_access(user_id, cashflow_id, ["owner"])
 
@@ -1425,13 +1559,13 @@ def update_share_settings(cashflow_id: str, settings: CashflowShareSettings, req
 
     cursor.execute(
         "UPDATE cashflows SET is_public = ?, updated_at = ? WHERE id = ?",
-        (1 if settings.is_public else 0, now, cashflow_id)
+        (1 if settings.is_public else 0, now, cashflow_id),
     )
     conn.commit()
 
     cursor.execute(
         "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
-        (cashflow_id,)
+        (cashflow_id,),
     )
     row = cursor.fetchone()
     conn.close()
@@ -1447,7 +1581,7 @@ def get_public_cashflow(share_id: str):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE share_id = ?",
-        (share_id,)
+        (share_id,),
     )
     row = cursor.fetchone()
     conn.close()
@@ -1471,7 +1605,7 @@ def get_public_cashflow_details(share_id: str):
         "share_id": cashflow["share_id"],
         "is_public": bool(cashflow["is_public"]),
         "created_at": cashflow["created_at"],
-        "updated_at": cashflow["updated_at"]
+        "updated_at": cashflow["updated_at"],
     }
 
 
@@ -1484,7 +1618,7 @@ def list_public_categories(share_id: str):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, cashflow_id, name, type, icon, color FROM categories WHERE cashflow_id = ? ORDER BY type, name",
-        (cashflow_id,)
+        (cashflow_id,),
     )
     rows = cursor.fetchall()
     conn.close()
@@ -1501,7 +1635,14 @@ def create_public_category(share_id: str, category: CategoryBase):
     cat_id = str(uuid.uuid4())
     cursor.execute(
         "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
-        (cat_id, cashflow_id, category.name, category.type, category.icon, category.color)
+        (
+            cat_id,
+            cashflow_id,
+            category.name,
+            category.type,
+            category.icon,
+            category.color,
+        ),
     )
     conn.commit()
     conn.close()
@@ -1509,7 +1650,9 @@ def create_public_category(share_id: str, category: CategoryBase):
 
 
 @app.get("/api/public/{share_id}/plans")
-def list_public_plans(share_id: str, status: Optional[str] = None, category_id: Optional[str] = None):
+def list_public_plans(
+    share_id: str, status: Optional[str] = None, category_id: Optional[str] = None
+):
     cashflow = get_public_cashflow(share_id)
     cashflow_id = cashflow["id"]
 
@@ -1542,28 +1685,30 @@ def list_public_plans(share_id: str, status: Optional[str] = None, category_id: 
 
     plans = []
     for row in rows:
-        plans.append({
-            "id": row["id"],
-            "cashflow_id": row["cashflow_id"],
-            "category_id": row["category_id"],
-            "name": row["name"],
-            "expected_amount": row["expected_amount"],
-            "frequency": row["frequency"],
-            "expected_day": row["expected_day"],
-            "start_month": row["start_month"],
-            "end_month": row["end_month"],
-            "status": row["status"],
-            "notes": row["notes"],
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-            "category": {
-                "id": row["cat_id"],
-                "name": row["cat_name"],
-                "type": row["cat_type"],
-                "icon": row["cat_icon"],
-                "color": row["cat_color"],
-            },
-        })
+        plans.append(
+            {
+                "id": row["id"],
+                "cashflow_id": row["cashflow_id"],
+                "category_id": row["category_id"],
+                "name": row["name"],
+                "expected_amount": row["expected_amount"],
+                "frequency": row["frequency"],
+                "expected_day": row["expected_day"],
+                "start_month": row["start_month"],
+                "end_month": row["end_month"],
+                "status": row["status"],
+                "notes": row["notes"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "category": {
+                    "id": row["cat_id"],
+                    "name": row["cat_name"],
+                    "type": row["cat_type"],
+                    "icon": row["cat_icon"],
+                    "color": row["cat_color"],
+                },
+            }
+        )
 
     return plans
 
@@ -1582,8 +1727,20 @@ def create_public_plan(share_id: str, plan: PlanCreate):
         """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
            expected_day, start_month, end_month, status, notes, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)""",
-        (plan_id, cashflow_id, plan.category_id, plan.name, plan.expected_amount, plan.frequency,
-         plan.expected_day, plan.start_month, plan.end_month, plan.notes, now, now)
+        (
+            plan_id,
+            cashflow_id,
+            plan.category_id,
+            plan.name,
+            plan.expected_amount,
+            plan.frequency,
+            plan.expected_day,
+            plan.start_month,
+            plan.end_month,
+            plan.notes,
+            now,
+            now,
+        ),
     )
     conn.commit()
     result = get_plan_by_id(plan_id, conn)
@@ -1600,7 +1757,9 @@ def update_public_plan(share_id: str, plan_id: str, plan: PlanUpdate):
     cursor = conn.cursor()
     now = date.today().isoformat()
 
-    cursor.execute("SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id))
+    cursor.execute(
+        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+    )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -1618,10 +1777,7 @@ def update_public_plan(share_id: str, plan_id: str, plan: PlanUpdate):
         params.append(now)
         params.append(plan_id)
 
-        cursor.execute(
-            f"UPDATE plans SET {', '.join(updates)} WHERE id = ?",
-            params
-        )
+        cursor.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", params)
         conn.commit()
 
     result = get_plan_by_id(plan_id, conn)
@@ -1636,7 +1792,9 @@ def delete_public_plan(share_id: str, plan_id: str):
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id))
+    cursor.execute(
+        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+    )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -1648,7 +1806,12 @@ def delete_public_plan(share_id: str, plan_id: str):
 
 
 @app.get("/api/public/{share_id}/entries")
-def list_public_entries(share_id: str, from_month: Optional[str] = None, to_month: Optional[str] = None, plan_id: Optional[str] = None):
+def list_public_entries(
+    share_id: str,
+    from_month: Optional[str] = None,
+    to_month: Optional[str] = None,
+    plan_id: Optional[str] = None,
+):
     cashflow = get_public_cashflow(share_id)
     cashflow_id = cashflow["id"]
 
@@ -1686,37 +1849,39 @@ def list_public_entries(share_id: str, from_month: Optional[str] = None, to_mont
 
     entries = []
     for row in rows:
-        entries.append({
-            "id": row["id"],
-            "plan_id": row["plan_id"],
-            "month_year": row["month_year"],
-            "amount": row["amount"],
-            "date": row["date"],
-            "notes": row["notes"],
-            "created_at": row["created_at"],
-            "plan": {
-                "id": row["p_id"],
-                "cashflow_id": row["cashflow_id"],
-                "category_id": row["category_id"],
-                "name": row["plan_name"],
-                "expected_amount": row["expected_amount"],
-                "frequency": row["frequency"],
-                "expected_day": row["expected_day"],
-                "start_month": row["start_month"],
-                "end_month": row["end_month"],
-                "status": row["plan_status"],
-                "notes": row["plan_notes"],
-                "created_at": row["plan_created_at"],
-                "updated_at": row["plan_updated_at"],
-                "category": {
-                    "id": row["cat_id"],
-                    "name": row["cat_name"],
-                    "type": row["cat_type"],
-                    "icon": row["cat_icon"],
-                    "color": row["cat_color"],
+        entries.append(
+            {
+                "id": row["id"],
+                "plan_id": row["plan_id"],
+                "month_year": row["month_year"],
+                "amount": row["amount"],
+                "date": row["date"],
+                "notes": row["notes"],
+                "created_at": row["created_at"],
+                "plan": {
+                    "id": row["p_id"],
+                    "cashflow_id": row["cashflow_id"],
+                    "category_id": row["category_id"],
+                    "name": row["plan_name"],
+                    "expected_amount": row["expected_amount"],
+                    "frequency": row["frequency"],
+                    "expected_day": row["expected_day"],
+                    "start_month": row["start_month"],
+                    "end_month": row["end_month"],
+                    "status": row["plan_status"],
+                    "notes": row["plan_notes"],
+                    "created_at": row["plan_created_at"],
+                    "updated_at": row["plan_updated_at"],
+                    "category": {
+                        "id": row["cat_id"],
+                        "name": row["cat_name"],
+                        "type": row["cat_type"],
+                        "icon": row["cat_icon"],
+                        "color": row["cat_color"],
+                    },
                 },
-            },
-        })
+            }
+        )
 
     return entries
 
@@ -1731,7 +1896,10 @@ def create_public_entry(share_id: str, entry: EntryCreate):
     entry_id = str(uuid.uuid4())
     now = date.today().isoformat()
 
-    cursor.execute("SELECT id, frequency FROM plans WHERE id = ? AND cashflow_id = ?", (entry.plan_id, cashflow_id))
+    cursor.execute(
+        "SELECT id, frequency FROM plans WHERE id = ? AND cashflow_id = ?",
+        (entry.plan_id, cashflow_id),
+    )
     plan_row = cursor.fetchone()
     if not plan_row:
         conn.close()
@@ -1740,13 +1908,21 @@ def create_public_entry(share_id: str, entry: EntryCreate):
     cursor.execute(
         """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (entry_id, entry.plan_id, entry.month_year, entry.amount, entry.date, entry.notes, now)
+        (
+            entry_id,
+            entry.plan_id,
+            entry.month_year,
+            entry.amount,
+            entry.date,
+            entry.notes,
+            now,
+        ),
     )
 
     if plan_row["frequency"] == "one-time":
         cursor.execute(
             "UPDATE plans SET status = 'completed', updated_at = ? WHERE id = ?",
-            (now, entry.plan_id)
+            (now, entry.plan_id),
         )
 
     conn.commit()
@@ -1767,7 +1943,7 @@ def update_public_entry(share_id: str, entry_id: str, entry: EntryUpdate):
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
            WHERE e.id = ? AND p.cashflow_id = ?""",
-        (entry_id, cashflow_id)
+        (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
         conn.close()
@@ -1783,10 +1959,7 @@ def update_public_entry(share_id: str, entry_id: str, entry: EntryUpdate):
 
     if updates:
         params.append(entry_id)
-        cursor.execute(
-            f"UPDATE entries SET {', '.join(updates)} WHERE id = ?",
-            params
-        )
+        cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id = ?", params)
         conn.commit()
 
     result = get_entry_by_id(entry_id, conn)
@@ -1805,7 +1978,7 @@ def delete_public_entry(share_id: str, entry_id: str):
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
            WHERE e.id = ? AND p.cashflow_id = ?""",
-        (entry_id, cashflow_id)
+        (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
         conn.close()
@@ -1823,7 +1996,9 @@ def list_public_settings(share_id: str):
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM settings WHERE cashflow_id = ?", (cashflow_id,))
+    cursor.execute(
+        "SELECT key, value FROM settings WHERE cashflow_id = ?", (cashflow_id,)
+    )
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -1838,11 +2013,19 @@ def update_public_setting(share_id: str, key: str, setting: dict):
     cursor = conn.cursor()
     value = setting["value"]
 
-    cursor.execute("SELECT key FROM settings WHERE cashflow_id = ? AND key = ?", (cashflow_id, key))
+    cursor.execute(
+        "SELECT key FROM settings WHERE cashflow_id = ? AND key = ?", (cashflow_id, key)
+    )
     if cursor.fetchone():
-        cursor.execute("UPDATE settings SET value = ? WHERE cashflow_id = ? AND key = ?", (value, cashflow_id, key))
+        cursor.execute(
+            "UPDATE settings SET value = ? WHERE cashflow_id = ? AND key = ?",
+            (value, cashflow_id, key),
+        )
     else:
-        cursor.execute("INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)", (cashflow_id, key, value))
+        cursor.execute(
+            "INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)",
+            (cashflow_id, key, value),
+        )
 
     conn.commit()
     conn.close()
@@ -1906,13 +2089,13 @@ def import_cashflow(data: CashflowImport, request: Request):
 
     cursor.execute(
         "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-        (cashflow_id, data.name, data.description, user_id, share_id, now, now)
+        (cashflow_id, data.name, data.description, user_id, share_id, now, now),
     )
 
     member_id = str(uuid.uuid4())
     cursor.execute(
         "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, 'owner', ?)",
-        (member_id, cashflow_id, user_id, now)
+        (member_id, cashflow_id, user_id, now),
     )
 
     category_id_map = {}
@@ -1921,7 +2104,7 @@ def import_cashflow(data: CashflowImport, request: Request):
         category_id_map[cat.id] = new_cat_id
         cursor.execute(
             "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
-            (new_cat_id, cashflow_id, cat.name, cat.type, cat.icon, cat.color)
+            (new_cat_id, cashflow_id, cat.name, cat.type, cat.icon, cat.color),
         )
 
     plan_id_map = {}
@@ -1933,8 +2116,21 @@ def import_cashflow(data: CashflowImport, request: Request):
             """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
                expected_day, start_month, end_month, status, notes, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (new_plan_id, cashflow_id, new_category_id, plan.name, plan.expected_amount, plan.frequency,
-             plan.expected_day, plan.start_month, plan.end_month, plan.status, plan.notes, now, now)
+            (
+                new_plan_id,
+                cashflow_id,
+                new_category_id,
+                plan.name,
+                plan.expected_amount,
+                plan.frequency,
+                plan.expected_day,
+                plan.start_month,
+                plan.end_month,
+                plan.status,
+                plan.notes,
+                now,
+                now,
+            ),
         )
 
     for entry in data.entries:
@@ -1943,13 +2139,21 @@ def import_cashflow(data: CashflowImport, request: Request):
         cursor.execute(
             """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (new_entry_id, new_plan_id, entry.month_year, entry.amount, entry.date, entry.notes, now)
+            (
+                new_entry_id,
+                new_plan_id,
+                entry.month_year,
+                entry.amount,
+                entry.date,
+                entry.notes,
+                now,
+            ),
         )
 
     for setting in data.settings:
         cursor.execute(
             "INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)",
-            (cashflow_id, setting.key, setting.value)
+            (cashflow_id, setting.key, setting.value),
         )
 
     conn.commit()
@@ -1964,7 +2168,7 @@ def import_cashflow(data: CashflowImport, request: Request):
         "share_id": share_id,
         "is_public": False,
         "created_at": now,
-        "updated_at": now
+        "updated_at": now,
     }
 
 
