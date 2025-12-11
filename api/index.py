@@ -583,10 +583,12 @@ async def auth_callback(provider: str, request: Request):
     jwt_token = create_jwt_token(user["id"])
 
     response = RedirectResponse(url=APP_URL, status_code=302)
+    is_secure = APP_URL.startswith("https://")
     response.set_cookie(
         key="session_token",
         value=jwt_token,
         httponly=True,
+        secure=is_secure,
         max_age=JWT_EXPIRATION_DAYS * 24 * 60 * 60,
         samesite="lax"
     )
