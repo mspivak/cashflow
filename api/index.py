@@ -1,6 +1,5 @@
 import os
 import uuid
-import sqlite3
 import traceback
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -31,8 +30,6 @@ if not APP_URL:
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 30
 
-LOCAL_DB_PATH = "/tmp/cashflow.db"
-
 oauth = OAuth()
 
 if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
@@ -55,15 +52,14 @@ if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
         client_kwargs={"scope": "user:email"},
     )
 
-libsql_client = None
-_turso_client = None
-if TURSO_DATABASE_URL:
-    try:
-        _turso_client = libsql_client.create_client_sync(
-            url=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN
-        )
-    except ImportError:
-        TURSO_DATABASE_URL = ""
+if not TURSO_DATABASE_URL:
+    raise RuntimeError("TURSO_DATABASE_URL environment variable is required")
+if not TURSO_AUTH_TOKEN and not TURSO_DATABASE_URL.startswith("file:"):
+    raise RuntimeError("TURSO_AUTH_TOKEN environment variable is required for remote databases")
+
+_turso_client = libsql_client.create_client_sync(
+    url=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN or None
+)
 
 _db_initialized = False
 
@@ -133,21 +129,11 @@ class DBWrapper:
 
 def get_db():
     global _db_initialized
-
-    if TURSO_DATABASE_URL and _turso_client:
-        wrapper = DBWrapper(_turso_client, is_turso=True)
-        if not _db_initialized:
-            init_db_tables(wrapper)
-            _db_initialized = True
-        return wrapper
-    else:
-        conn = sqlite3.connect(LOCAL_DB_PATH)
-        conn.row_factory = sqlite3.Row
-        wrapper = DBWrapper(conn, is_turso=False)
-        if not _db_initialized:
-            init_db_tables(wrapper)
-            _db_initialized = True
-        return wrapper
+    wrapper = DBWrapper(_turso_client, is_turso=True)
+    if not _db_initialized:
+        init_db_tables(wrapper)
+        _db_initialized = True
+    return wrapper
 
 
 DEFAULT_CATEGORIES = [
