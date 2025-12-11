@@ -1,0 +1,5 @@
+fastapi
+authlib
+httpx
+python-jose[cryptography]
+itsdangerous
