@@ -11,10 +11,9 @@ from pydantic import BaseModel
 from httpx import AsyncClient
 from jose import jwt
 from itsdangerous import URLSafeTimedSerializer
-import libsql_client
+import psycopg
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-DATABASE_AUTH_TOKEN = os.getenv("DATABASE_AUTH_TOKEN", "")
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
@@ -31,86 +30,17 @@ state_serializer = URLSafeTimedSerializer(JWT_SECRET_KEY)
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
-if not DATABASE_AUTH_TOKEN and not DATABASE_URL.startswith("file:"):
-    raise RuntimeError("DATABASE_AUTH_TOKEN environment variable is required for remote databases")
-
-_db_client = libsql_client.create_client_sync(
-    url=DATABASE_URL, auth_token=DATABASE_AUTH_TOKEN or None
-)
 
 _db_initialized = False
 
 
-class Row(dict):
-    def __init__(self, columns, values):
-        super().__init__(zip(columns, values))
-        self._values = list(values)
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return self._values[key]
-        return super().__getitem__(key)
-
-
-class DBWrapper:
-    def __init__(self, conn, is_turso=False):
-        self.conn = conn
-        self.is_turso = is_turso
-        self._cursor = None
-
-    def cursor(self):
-        if self.is_turso:
-            return self
-        return self.conn.cursor()
-
-    def execute(self, sql, params=None):
-        if self.is_turso:
-            if params:
-                result = self.conn.execute(sql, params)
-            else:
-                result = self.conn.execute(sql)
-            self._last_result = result
-            return self
-        else:
-            if self._cursor is None:
-                self._cursor = self.conn.cursor()
-            if params:
-                self._cursor.execute(sql, params)
-            else:
-                self._cursor.execute(sql)
-            return self._cursor
-
-    def fetchone(self):
-        if self.is_turso:
-            rows = self._last_result.rows
-            if rows:
-                return Row(self._last_result.columns, rows[0])
-            return None
-        return self._cursor.fetchone()
-
-    def fetchall(self):
-        if self.is_turso:
-            return [
-                Row(self._last_result.columns, row) for row in self._last_result.rows
-            ]
-        return self._cursor.fetchall()
-
-    def commit(self):
-        if not self.is_turso:
-            self.conn.commit()
-
-    def close(self):
-        if not self.is_turso:
-            self.conn.close()
-
-
 def get_db():
     global _db_initialized
-    wrapper = DBWrapper(_db_client, is_turso=True)
+    conn = psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
     if not _db_initialized:
-        init_db_tables(wrapper)
+        init_db_tables(conn)
         _db_initialized = True
-    return wrapper
+    return conn
 
 
 DEFAULT_CATEGORIES = [
@@ -426,7 +356,7 @@ def get_user_by_id(user_id: str, conn=None):
         conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, email, name, avatar_url, provider, created_at FROM users WHERE id = ?",
+        "SELECT id, email, name, avatar_url, provider, created_at FROM users WHERE id = %s",
         (user_id,),
     )
     row = cursor.fetchone()
@@ -448,7 +378,7 @@ def get_or_create_user(
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT id, email, name, avatar_url, provider, created_at FROM users WHERE provider = ? AND provider_id = ?",
+        "SELECT id, email, name, avatar_url, provider, created_at FROM users WHERE provider = %s AND provider_id = %s",
         (provider, provider_id),
     )
     row = cursor.fetchone()
@@ -458,7 +388,7 @@ def get_or_create_user(
         conn.close()
         return user, False
 
-    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+    cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
     existing = cursor.fetchone()
     if existing:
         conn.close()
@@ -469,7 +399,7 @@ def get_or_create_user(
     user_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     cursor.execute(
-        "INSERT INTO users (id, email, name, avatar_url, provider, provider_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, email, name, avatar_url, provider, provider_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (user_id, email, name, avatar_url, provider, provider_id, now),
     )
     conn.commit()
@@ -496,19 +426,19 @@ def create_default_cashflow(user_id: str, user_name: Optional[str]):
     name = f"{user_name}'s Budget" if user_name else "My Budget"
 
     cursor.execute(
-        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, 0, %s, %s)",
         (cashflow_id, name, None, user_id, share_id, now, now),
     )
 
     member_id = str(uuid.uuid4())
     cursor.execute(
-        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, 'owner', ?)",
+        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (%s, %s, %s, 'owner', %s)",
         (member_id, cashflow_id, user_id, now),
     )
 
     for cat in DEFAULT_CATEGORIES:
         cursor.execute(
-            "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 cashflow_id,
@@ -520,7 +450,7 @@ def create_default_cashflow(user_id: str, user_name: Optional[str]):
         )
 
     cursor.execute(
-        "INSERT INTO settings (cashflow_id, key, value) VALUES (?, 'starting_balance', '0')",
+        "INSERT INTO settings (cashflow_id, key, value) VALUES (%s, 'starting_balance', '0')",
         (cashflow_id,),
     )
 
@@ -538,7 +468,7 @@ def check_cashflow_access(
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT role FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
+        "SELECT role FROM cashflow_members WHERE cashflow_id = %s AND user_id = %s",
         (cashflow_id, user_id),
     )
     row = cursor.fetchone()
@@ -712,7 +642,7 @@ def list_cashflows(request: Request):
         """SELECT c.id, c.name, c.description, c.owner_id, c.share_id, c.is_public, c.created_at, c.updated_at, cm.role
            FROM cashflows c
            JOIN cashflow_members cm ON c.id = cm.cashflow_id
-           WHERE cm.user_id = ?
+           WHERE cm.user_id = %s
            ORDER BY c.name""",
         (user_id,),
     )
@@ -734,19 +664,19 @@ def create_cashflow(cashflow: CashflowCreate, request: Request):
     now = datetime.utcnow().isoformat()
 
     cursor.execute(
-        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, 0, %s, %s)",
         (cashflow_id, cashflow.name, cashflow.description, user_id, share_id, now, now),
     )
 
     member_id = str(uuid.uuid4())
     cursor.execute(
-        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, 'owner', ?)",
+        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (%s, %s, %s, 'owner', %s)",
         (member_id, cashflow_id, user_id, now),
     )
 
     for cat in DEFAULT_CATEGORIES:
         cursor.execute(
-            "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 cashflow_id,
@@ -758,7 +688,7 @@ def create_cashflow(cashflow: CashflowCreate, request: Request):
         )
 
     cursor.execute(
-        "INSERT INTO settings (cashflow_id, key, value) VALUES (?, 'starting_balance', '0')",
+        "INSERT INTO settings (cashflow_id, key, value) VALUES (%s, 'starting_balance', '0')",
         (cashflow_id,),
     )
 
@@ -786,7 +716,7 @@ def get_cashflow(cashflow_id: str, request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = %s",
         (cashflow_id,),
     )
     row = cursor.fetchone()
@@ -815,21 +745,21 @@ def update_cashflow(cashflow_id: str, cashflow: CashflowUpdate, request: Request
     data = cashflow.model_dump(exclude_unset=True)
 
     for key, value in data.items():
-        updates.append(f"{key} = ?")
+        updates.append(f"{key} = %s")
         params.append(value)
 
     if updates:
-        updates.append("updated_at = ?")
+        updates.append("updated_at = %s")
         params.append(now)
         params.append(cashflow_id)
 
         cursor.execute(
-            f"UPDATE cashflows SET {', '.join(updates)} WHERE id = ?", params
+            f"UPDATE cashflows SET {', '.join(updates)} WHERE id = %s", params
         )
         conn.commit()
 
     cursor.execute(
-        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = %s",
         (cashflow_id,),
     )
     row = cursor.fetchone()
@@ -849,15 +779,15 @@ def delete_cashflow(cashflow_id: str, request: Request):
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("DELETE FROM settings WHERE cashflow_id = ?", (cashflow_id,))
+    cursor.execute("DELETE FROM settings WHERE cashflow_id = %s", (cashflow_id,))
     cursor.execute(
-        "DELETE FROM entries WHERE plan_id IN (SELECT id FROM plans WHERE cashflow_id = ?)",
+        "DELETE FROM entries WHERE plan_id IN (SELECT id FROM plans WHERE cashflow_id = %s)",
         (cashflow_id,),
     )
-    cursor.execute("DELETE FROM plans WHERE cashflow_id = ?", (cashflow_id,))
-    cursor.execute("DELETE FROM categories WHERE cashflow_id = ?", (cashflow_id,))
-    cursor.execute("DELETE FROM cashflow_members WHERE cashflow_id = ?", (cashflow_id,))
-    cursor.execute("DELETE FROM cashflows WHERE id = ?", (cashflow_id,))
+    cursor.execute("DELETE FROM plans WHERE cashflow_id = %s", (cashflow_id,))
+    cursor.execute("DELETE FROM categories WHERE cashflow_id = %s", (cashflow_id,))
+    cursor.execute("DELETE FROM cashflow_members WHERE cashflow_id = %s", (cashflow_id,))
+    cursor.execute("DELETE FROM cashflows WHERE id = %s", (cashflow_id,))
 
     conn.commit()
     conn.close()
@@ -874,7 +804,7 @@ def list_cashflow_members(cashflow_id: str, request: Request):
         """SELECT cm.id, cm.user_id, u.email, u.name, u.avatar_url, cm.role, cm.invited_at
            FROM cashflow_members cm
            JOIN users u ON cm.user_id = u.id
-           WHERE cm.cashflow_id = ?
+           WHERE cm.cashflow_id = %s
            ORDER BY cm.role, u.name""",
         (cashflow_id,),
     )
@@ -898,7 +828,7 @@ def invite_member(cashflow_id: str, member: CashflowMemberBase, request: Request
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT id, name, avatar_url FROM users WHERE email = ?", (member.email,)
+        "SELECT id, name, avatar_url FROM users WHERE email = %s", (member.email,)
     )
     user_row = cursor.fetchone()
 
@@ -911,7 +841,7 @@ def invite_member(cashflow_id: str, member: CashflowMemberBase, request: Request
     target_user_id = user_row["id"]
 
     cursor.execute(
-        "SELECT id FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
+        "SELECT id FROM cashflow_members WHERE cashflow_id = %s AND user_id = %s",
         (cashflow_id, target_user_id),
     )
     if cursor.fetchone():
@@ -922,7 +852,7 @@ def invite_member(cashflow_id: str, member: CashflowMemberBase, request: Request
     now = datetime.utcnow().isoformat()
 
     cursor.execute(
-        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (%s, %s, %s, %s, %s)",
         (member_id, cashflow_id, target_user_id, member.role, now),
     )
     conn.commit()
@@ -958,7 +888,7 @@ def update_member_role(
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT role FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
+        "SELECT role FROM cashflow_members WHERE cashflow_id = %s AND user_id = %s",
         (cashflow_id, member_user_id),
     )
     row = cursor.fetchone()
@@ -972,7 +902,7 @@ def update_member_role(
         raise HTTPException(status_code=400, detail="Cannot change owner's role")
 
     cursor.execute(
-        "UPDATE cashflow_members SET role = ? WHERE cashflow_id = ? AND user_id = ?",
+        "UPDATE cashflow_members SET role = %s WHERE cashflow_id = %s AND user_id = %s",
         (role_update.role, cashflow_id, member_user_id),
     )
     conn.commit()
@@ -990,7 +920,7 @@ def remove_member(cashflow_id: str, member_user_id: str, request: Request):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT role FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
+        "SELECT role FROM cashflow_members WHERE cashflow_id = %s AND user_id = %s",
         (cashflow_id, member_user_id),
     )
     row = cursor.fetchone()
@@ -1004,7 +934,7 @@ def remove_member(cashflow_id: str, member_user_id: str, request: Request):
         raise HTTPException(status_code=400, detail="Cannot remove owner")
 
     cursor.execute(
-        "DELETE FROM cashflow_members WHERE cashflow_id = ? AND user_id = ?",
+        "DELETE FROM cashflow_members WHERE cashflow_id = %s AND user_id = %s",
         (cashflow_id, member_user_id),
     )
     conn.commit()
@@ -1019,7 +949,7 @@ def list_categories(cashflow_id: str, request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, cashflow_id, name, type, icon, color FROM categories WHERE cashflow_id = ? ORDER BY type, name",
+        "SELECT id, cashflow_id, name, type, icon, color FROM categories WHERE cashflow_id = %s ORDER BY type, name",
         (cashflow_id,),
     )
     rows = cursor.fetchall()
@@ -1036,7 +966,7 @@ def create_category(cashflow_id: str, category: CategoryBase, request: Request):
     cursor = conn.cursor()
     cat_id = str(uuid.uuid4())
     cursor.execute(
-        "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (%s, %s, %s, %s, %s, %s)",
         (
             cat_id,
             cashflow_id,
@@ -1062,7 +992,7 @@ def get_plan_by_id(plan_id: str, conn=None):
            p.created_at, p.updated_at,
            c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
            FROM plans p JOIN categories c ON p.category_id = c.id
-           WHERE p.id = ?""",
+           WHERE p.id = %s""",
         (plan_id,),
     )
     row = cursor.fetchone()
@@ -1115,15 +1045,15 @@ def list_plans(
                c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
         FROM plans p
         JOIN categories c ON p.category_id = c.id
-        WHERE p.cashflow_id = ?
+        WHERE p.cashflow_id = %s
     """
     params = [cashflow_id]
 
     if status:
-        query += " AND p.status = ?"
+        query += " AND p.status = %s"
         params.append(status)
     if category_id:
-        query += " AND p.category_id = ?"
+        query += " AND p.category_id = %s"
         params.append(category_id)
 
     query += " ORDER BY p.name"
@@ -1175,7 +1105,7 @@ def create_plan(cashflow_id: str, plan: PlanCreate, request: Request):
     cursor.execute(
         """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
            expected_day, start_month, end_month, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)""",
         (
             plan_id,
             cashflow_id,
@@ -1218,7 +1148,7 @@ def update_plan(cashflow_id: str, plan_id: str, plan: PlanUpdate, request: Reque
     now = date.today().isoformat()
 
     cursor.execute(
-        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+        "SELECT id FROM plans WHERE id = %s AND cashflow_id = %s", (plan_id, cashflow_id)
     )
     if not cursor.fetchone():
         conn.close()
@@ -1229,15 +1159,15 @@ def update_plan(cashflow_id: str, plan_id: str, plan: PlanUpdate, request: Reque
     data = plan.model_dump(exclude_unset=True)
 
     for key, value in data.items():
-        updates.append(f"{key} = ?")
+        updates.append(f"{key} = %s")
         params.append(value)
 
     if updates:
-        updates.append("updated_at = ?")
+        updates.append("updated_at = %s")
         params.append(now)
         params.append(plan_id)
 
-        cursor.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", params)
+        cursor.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = %s", params)
         conn.commit()
 
     result = get_plan_by_id(plan_id, conn)
@@ -1253,14 +1183,14 @@ def delete_plan(cashflow_id: str, plan_id: str, request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+        "SELECT id FROM plans WHERE id = %s AND cashflow_id = %s", (plan_id, cashflow_id)
     )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Plan not found")
 
-    cursor.execute("DELETE FROM entries WHERE plan_id = ?", (plan_id,))
-    cursor.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+    cursor.execute("DELETE FROM entries WHERE plan_id = %s", (plan_id,))
+    cursor.execute("DELETE FROM plans WHERE id = %s", (plan_id,))
     conn.commit()
     conn.close()
 
@@ -1279,7 +1209,7 @@ def get_entry_by_id(entry_id: str, conn=None):
            FROM entries e
            JOIN plans p ON e.plan_id = p.id
            JOIN categories c ON p.category_id = c.id
-           WHERE e.id = ?""",
+           WHERE e.id = %s""",
         (entry_id,),
     )
     row = cursor.fetchone()
@@ -1345,18 +1275,18 @@ def list_entries(
         FROM entries e
         JOIN plans p ON e.plan_id = p.id
         JOIN categories c ON p.category_id = c.id
-        WHERE p.cashflow_id = ?
+        WHERE p.cashflow_id = %s
     """
     params = [cashflow_id]
 
     if from_month:
-        query += " AND e.month_year >= ?"
+        query += " AND e.month_year >= %s"
         params.append(from_month)
     if to_month:
-        query += " AND e.month_year <= ?"
+        query += " AND e.month_year <= %s"
         params.append(to_month)
     if plan_id:
-        query += " AND e.plan_id = ?"
+        query += " AND e.plan_id = %s"
         params.append(plan_id)
 
     query += " ORDER BY e.month_year, e.created_at"
@@ -1415,7 +1345,7 @@ def create_entry(cashflow_id: str, entry: EntryCreate, request: Request):
     now = date.today().isoformat()
 
     cursor.execute(
-        "SELECT id, frequency FROM plans WHERE id = ? AND cashflow_id = ?",
+        "SELECT id, frequency FROM plans WHERE id = %s AND cashflow_id = %s",
         (entry.plan_id, cashflow_id),
     )
     plan_row = cursor.fetchone()
@@ -1425,7 +1355,7 @@ def create_entry(cashflow_id: str, entry: EntryCreate, request: Request):
 
     cursor.execute(
         """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (
             entry_id,
             entry.plan_id,
@@ -1439,7 +1369,7 @@ def create_entry(cashflow_id: str, entry: EntryCreate, request: Request):
 
     if plan_row["frequency"] == "one-time":
         cursor.execute(
-            "UPDATE plans SET status = 'completed', updated_at = ? WHERE id = ?",
+            "UPDATE plans SET status = 'completed', updated_at = %s WHERE id = %s",
             (now, entry.plan_id),
         )
 
@@ -1471,7 +1401,7 @@ def update_entry(cashflow_id: str, entry_id: str, entry: EntryUpdate, request: R
     cursor.execute(
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
-           WHERE e.id = ? AND p.cashflow_id = ?""",
+           WHERE e.id = %s AND p.cashflow_id = %s""",
         (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
@@ -1483,12 +1413,12 @@ def update_entry(cashflow_id: str, entry_id: str, entry: EntryUpdate, request: R
     data = entry.model_dump(exclude_unset=True)
 
     for key, value in data.items():
-        updates.append(f"{key} = ?")
+        updates.append(f"{key} = %s")
         params.append(value)
 
     if updates:
         params.append(entry_id)
-        cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id = ?", params)
+        cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id = %s", params)
         conn.commit()
 
     result = get_entry_by_id(entry_id, conn)
@@ -1506,14 +1436,14 @@ def delete_entry(cashflow_id: str, entry_id: str, request: Request):
     cursor.execute(
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
-           WHERE e.id = ? AND p.cashflow_id = ?""",
+           WHERE e.id = %s AND p.cashflow_id = %s""",
         (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    cursor.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+    cursor.execute("DELETE FROM entries WHERE id = %s", (entry_id,))
     conn.commit()
     conn.close()
 
@@ -1526,7 +1456,7 @@ def list_settings(cashflow_id: str, request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT key, value FROM settings WHERE cashflow_id = ?", (cashflow_id,)
+        "SELECT key, value FROM settings WHERE cashflow_id = %s", (cashflow_id,)
     )
     rows = cursor.fetchall()
     conn.close()
@@ -1543,16 +1473,16 @@ def update_setting(cashflow_id: str, key: str, setting: dict, request: Request):
     value = setting["value"]
 
     cursor.execute(
-        "SELECT key FROM settings WHERE cashflow_id = ? AND key = ?", (cashflow_id, key)
+        "SELECT key FROM settings WHERE cashflow_id = %s AND key = %s", (cashflow_id, key)
     )
     if cursor.fetchone():
         cursor.execute(
-            "UPDATE settings SET value = ? WHERE cashflow_id = ? AND key = ?",
+            "UPDATE settings SET value = %s WHERE cashflow_id = %s AND key = %s",
             (value, cashflow_id, key),
         )
     else:
         cursor.execute(
-            "INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)",
+            "INSERT INTO settings (cashflow_id, key, value) VALUES (%s, %s, %s)",
             (cashflow_id, key, value),
         )
 
@@ -1573,13 +1503,13 @@ def update_share_settings(
     now = datetime.utcnow().isoformat()
 
     cursor.execute(
-        "UPDATE cashflows SET is_public = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cashflows SET is_public = %s, updated_at = %s WHERE id = %s",
         (1 if settings.is_public else 0, now, cashflow_id),
     )
     conn.commit()
 
     cursor.execute(
-        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = ?",
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE id = %s",
         (cashflow_id,),
     )
     row = cursor.fetchone()
@@ -1595,7 +1525,7 @@ def get_public_cashflow(share_id: str):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE share_id = ?",
+        "SELECT id, name, description, owner_id, share_id, is_public, created_at, updated_at FROM cashflows WHERE share_id = %s",
         (share_id,),
     )
     row = cursor.fetchone()
@@ -1632,7 +1562,7 @@ def list_public_categories(share_id: str):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, cashflow_id, name, type, icon, color FROM categories WHERE cashflow_id = ? ORDER BY type, name",
+        "SELECT id, cashflow_id, name, type, icon, color FROM categories WHERE cashflow_id = %s ORDER BY type, name",
         (cashflow_id,),
     )
     rows = cursor.fetchall()
@@ -1649,7 +1579,7 @@ def create_public_category(share_id: str, category: CategoryBase):
     cursor = conn.cursor()
     cat_id = str(uuid.uuid4())
     cursor.execute(
-        "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (%s, %s, %s, %s, %s, %s)",
         (
             cat_id,
             cashflow_id,
@@ -1681,15 +1611,15 @@ def list_public_plans(
                c.id as cat_id, c.name as cat_name, c.type as cat_type, c.icon as cat_icon, c.color as cat_color
         FROM plans p
         JOIN categories c ON p.category_id = c.id
-        WHERE p.cashflow_id = ?
+        WHERE p.cashflow_id = %s
     """
     params = [cashflow_id]
 
     if status:
-        query += " AND p.status = ?"
+        query += " AND p.status = %s"
         params.append(status)
     if category_id:
-        query += " AND p.category_id = ?"
+        query += " AND p.category_id = %s"
         params.append(category_id)
 
     query += " ORDER BY p.name"
@@ -1741,7 +1671,7 @@ def create_public_plan(share_id: str, plan: PlanCreate):
     cursor.execute(
         """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
            expected_day, start_month, end_month, status, notes, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)""",
         (
             plan_id,
             cashflow_id,
@@ -1773,7 +1703,7 @@ def update_public_plan(share_id: str, plan_id: str, plan: PlanUpdate):
     now = date.today().isoformat()
 
     cursor.execute(
-        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+        "SELECT id FROM plans WHERE id = %s AND cashflow_id = %s", (plan_id, cashflow_id)
     )
     if not cursor.fetchone():
         conn.close()
@@ -1784,15 +1714,15 @@ def update_public_plan(share_id: str, plan_id: str, plan: PlanUpdate):
     data = plan.model_dump(exclude_unset=True)
 
     for key, value in data.items():
-        updates.append(f"{key} = ?")
+        updates.append(f"{key} = %s")
         params.append(value)
 
     if updates:
-        updates.append("updated_at = ?")
+        updates.append("updated_at = %s")
         params.append(now)
         params.append(plan_id)
 
-        cursor.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = ?", params)
+        cursor.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = %s", params)
         conn.commit()
 
     result = get_plan_by_id(plan_id, conn)
@@ -1808,14 +1738,14 @@ def delete_public_plan(share_id: str, plan_id: str):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id FROM plans WHERE id = ? AND cashflow_id = ?", (plan_id, cashflow_id)
+        "SELECT id FROM plans WHERE id = %s AND cashflow_id = %s", (plan_id, cashflow_id)
     )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Plan not found")
 
-    cursor.execute("DELETE FROM entries WHERE plan_id = ?", (plan_id,))
-    cursor.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+    cursor.execute("DELETE FROM entries WHERE plan_id = %s", (plan_id,))
+    cursor.execute("DELETE FROM plans WHERE id = %s", (plan_id,))
     conn.commit()
     conn.close()
 
@@ -1842,18 +1772,18 @@ def list_public_entries(
         FROM entries e
         JOIN plans p ON e.plan_id = p.id
         JOIN categories c ON p.category_id = c.id
-        WHERE p.cashflow_id = ?
+        WHERE p.cashflow_id = %s
     """
     params = [cashflow_id]
 
     if from_month:
-        query += " AND e.month_year >= ?"
+        query += " AND e.month_year >= %s"
         params.append(from_month)
     if to_month:
-        query += " AND e.month_year <= ?"
+        query += " AND e.month_year <= %s"
         params.append(to_month)
     if plan_id:
-        query += " AND e.plan_id = ?"
+        query += " AND e.plan_id = %s"
         params.append(plan_id)
 
     query += " ORDER BY e.month_year, e.created_at"
@@ -1912,7 +1842,7 @@ def create_public_entry(share_id: str, entry: EntryCreate):
     now = date.today().isoformat()
 
     cursor.execute(
-        "SELECT id, frequency FROM plans WHERE id = ? AND cashflow_id = ?",
+        "SELECT id, frequency FROM plans WHERE id = %s AND cashflow_id = %s",
         (entry.plan_id, cashflow_id),
     )
     plan_row = cursor.fetchone()
@@ -1922,7 +1852,7 @@ def create_public_entry(share_id: str, entry: EntryCreate):
 
     cursor.execute(
         """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (
             entry_id,
             entry.plan_id,
@@ -1936,7 +1866,7 @@ def create_public_entry(share_id: str, entry: EntryCreate):
 
     if plan_row["frequency"] == "one-time":
         cursor.execute(
-            "UPDATE plans SET status = 'completed', updated_at = ? WHERE id = ?",
+            "UPDATE plans SET status = 'completed', updated_at = %s WHERE id = %s",
             (now, entry.plan_id),
         )
 
@@ -1957,7 +1887,7 @@ def update_public_entry(share_id: str, entry_id: str, entry: EntryUpdate):
     cursor.execute(
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
-           WHERE e.id = ? AND p.cashflow_id = ?""",
+           WHERE e.id = %s AND p.cashflow_id = %s""",
         (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
@@ -1969,12 +1899,12 @@ def update_public_entry(share_id: str, entry_id: str, entry: EntryUpdate):
     data = entry.model_dump(exclude_unset=True)
 
     for key, value in data.items():
-        updates.append(f"{key} = ?")
+        updates.append(f"{key} = %s")
         params.append(value)
 
     if updates:
         params.append(entry_id)
-        cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id = ?", params)
+        cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id = %s", params)
         conn.commit()
 
     result = get_entry_by_id(entry_id, conn)
@@ -1992,14 +1922,14 @@ def delete_public_entry(share_id: str, entry_id: str):
     cursor.execute(
         """SELECT e.id FROM entries e
            JOIN plans p ON e.plan_id = p.id
-           WHERE e.id = ? AND p.cashflow_id = ?""",
+           WHERE e.id = %s AND p.cashflow_id = %s""",
         (entry_id, cashflow_id),
     )
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    cursor.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+    cursor.execute("DELETE FROM entries WHERE id = %s", (entry_id,))
     conn.commit()
     conn.close()
 
@@ -2012,7 +1942,7 @@ def list_public_settings(share_id: str):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT key, value FROM settings WHERE cashflow_id = ?", (cashflow_id,)
+        "SELECT key, value FROM settings WHERE cashflow_id = %s", (cashflow_id,)
     )
     rows = cursor.fetchall()
     conn.close()
@@ -2029,16 +1959,16 @@ def update_public_setting(share_id: str, key: str, setting: dict):
     value = setting["value"]
 
     cursor.execute(
-        "SELECT key FROM settings WHERE cashflow_id = ? AND key = ?", (cashflow_id, key)
+        "SELECT key FROM settings WHERE cashflow_id = %s AND key = %s", (cashflow_id, key)
     )
     if cursor.fetchone():
         cursor.execute(
-            "UPDATE settings SET value = ? WHERE cashflow_id = ? AND key = ?",
+            "UPDATE settings SET value = %s WHERE cashflow_id = %s AND key = %s",
             (value, cashflow_id, key),
         )
     else:
         cursor.execute(
-            "INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)",
+            "INSERT INTO settings (cashflow_id, key, value) VALUES (%s, %s, %s)",
             (cashflow_id, key, value),
         )
 
@@ -2103,13 +2033,13 @@ def import_cashflow(data: CashflowImport, request: Request):
     now = datetime.utcnow().isoformat()
 
     cursor.execute(
-        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+        "INSERT INTO cashflows (id, name, description, owner_id, share_id, is_public, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, 0, %s, %s)",
         (cashflow_id, data.name, data.description, user_id, share_id, now, now),
     )
 
     member_id = str(uuid.uuid4())
     cursor.execute(
-        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (?, ?, ?, 'owner', ?)",
+        "INSERT INTO cashflow_members (id, cashflow_id, user_id, role, invited_at) VALUES (%s, %s, %s, 'owner', %s)",
         (member_id, cashflow_id, user_id, now),
     )
 
@@ -2118,7 +2048,7 @@ def import_cashflow(data: CashflowImport, request: Request):
         new_cat_id = str(uuid.uuid4())
         category_id_map[cat.id] = new_cat_id
         cursor.execute(
-            "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (%s, %s, %s, %s, %s, %s)",
             (new_cat_id, cashflow_id, cat.name, cat.type, cat.icon, cat.color),
         )
 
@@ -2130,7 +2060,7 @@ def import_cashflow(data: CashflowImport, request: Request):
         cursor.execute(
             """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
                expected_day, start_month, end_month, status, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 new_plan_id,
                 cashflow_id,
@@ -2153,7 +2083,7 @@ def import_cashflow(data: CashflowImport, request: Request):
         new_plan_id = plan_id_map[entry.plan_id]
         cursor.execute(
             """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 new_entry_id,
                 new_plan_id,
@@ -2167,7 +2097,7 @@ def import_cashflow(data: CashflowImport, request: Request):
 
     for setting in data.settings:
         cursor.execute(
-            "INSERT INTO settings (cashflow_id, key, value) VALUES (?, ?, ?)",
+            "INSERT INTO settings (cashflow_id, key, value) VALUES (%s, %s, %s)",
             (cashflow_id, setting.key, setting.value),
         )
 
@@ -2192,16 +2122,3 @@ def health_check():
     return {"status": "healthy"}
 
 
-@app.get("/api/debug/turso")
-async def debug_turso():
-    url = DATABASE_URL.replace("libsql://", "https://")
-    headers = {"Authorization": f"Bearer {DATABASE_AUTH_TOKEN}"}
-    body = {
-        "requests": [
-            {"type": "execute", "stmt": {"sql": "SELECT 1"}},
-            {"type": "close"}
-        ]
-    }
-    async with AsyncClient() as client:
-        resp = await client.post(f"{url}/v2/pipeline", json=body, headers=headers)
-        return {"status": resp.status_code, "body": resp.json()}

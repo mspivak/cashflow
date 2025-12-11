@@ -2,4 +2,4 @@ fastapi
 httpx
 python-jose[cryptography]
 itsdangerous
-libsql-client
+psycopg[binary]
