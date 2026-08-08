@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-08T18:30:00Z",
+  "title": "Design System: Cashflow Tracker",
+  "extensions": {
+    "colorMeta": {
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "oklch(0.984 0.003 250)", "tonalRamp": ["oklch(0.17 0.012 255)", "oklch(0.28 0.012 252)", "oklch(0.4 0.01 251)", "oklch(0.55 0.008 250)", "oklch(0.7 0.006 250)", "oklch(0.84 0.005 250)", "oklch(0.93 0.004 250)", "oklch(0.984 0.003 250)"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(0.21 0.012 250)", "tonalRamp": ["oklch(0.15 0.012 250)", "oklch(0.21 0.012 250)", "oklch(0.32 0.012 250)", "oklch(0.45 0.012 250)", "oklch(0.58 0.01 250)", "oklch(0.72 0.008 250)", "oklch(0.85 0.006 250)", "oklch(0.95 0.004 250)"] },
+      "ink-blue": { "role": "primary", "displayName": "Ink Blue", "canonical": "oklch(0.45 0.13 255)", "tonalRamp": ["oklch(0.2 0.09 255)", "oklch(0.3 0.11 255)", "oklch(0.38 0.12 255)", "oklch(0.45 0.13 255)", "oklch(0.55 0.12 255)", "oklch(0.68 0.1 255)", "oklch(0.8 0.07 255)", "oklch(0.92 0.03 255)"] },
+      "ledger-green": { "role": "secondary", "displayName": "Ledger Green", "canonical": "oklch(0.46 0.1 152)", "tonalRamp": ["oklch(0.22 0.07 152)", "oklch(0.32 0.09 152)", "oklch(0.42 0.1 152)", "oklch(0.46 0.1 152)", "oklch(0.62 0.11 152)", "oklch(0.72 0.1 152)", "oklch(0.84 0.07 152)", "oklch(0.94 0.03 152)"] },
+      "graphite": { "role": "secondary", "displayName": "Graphite", "canonical": "oklch(0.42 0.015 250)", "tonalRamp": ["oklch(0.18 0.015 250)", "oklch(0.28 0.015 250)", "oklch(0.36 0.015 250)", "oklch(0.42 0.015 250)", "oklch(0.56 0.014 250)", "oklch(0.68 0.012 250)", "oklch(0.82 0.008 250)", "oklch(0.93 0.005 250)"] },
+      "alarm-red": { "role": "tertiary", "displayName": "Alarm Red", "canonical": "oklch(0.5 0.18 25)", "tonalRamp": ["oklch(0.24 0.11 25)", "oklch(0.34 0.14 25)", "oklch(0.44 0.16 25)", "oklch(0.5 0.18 25)", "oklch(0.64 0.17 25)", "oklch(0.74 0.13 25)", "oklch(0.85 0.08 25)", "oklch(0.94 0.03 25)"] },
+      "band-ink": { "role": "neutral", "displayName": "Band Ink", "canonical": "oklch(0.32 0.015 255)", "tonalRamp": ["oklch(0.18 0.015 255)", "oklch(0.24 0.015 255)", "oklch(0.32 0.015 255)", "oklch(0.42 0.014 255)", "oklch(0.54 0.012 255)", "oklch(0.68 0.01 255)", "oklch(0.82 0.007 255)", "oklch(0.93 0.004 255)"] }
+    },
+    "typographyMeta": {
+      "data": { "displayName": "Data", "purpose": "Money. Always tabular-nums, always signed." },
+      "label": { "displayName": "Label", "purpose": "Month names, board add-buttons, the legend." }
+    },
+    "shadows": [
+      { "name": "marker-lift", "value": "0 1px 2px rgba(0,0,0,0.2)", "purpose": "Under balance-marker dots only; lifts the marker off the wedge." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "colors 150ms ease-out", "purpose": "Hover and selection state changes; nothing choreographed." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single accent action: save, confirm, sign in.",
+      "html": "<button class=\"ds-btn-primary\">Save to Account</button>",
+      "css": ".ds-btn-primary { background: var(--primary, oklch(0.45 0.13 255)); color: var(--primary-foreground, oklch(0.985 0.005 250)); font: 500 0.875rem/1 system-ui, sans-serif; padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; transition: filter 150ms ease-out; } .ds-btn-primary:hover { filter: brightness(1.1); } .ds-btn-primary:focus-visible { outline: 2px solid var(--ring, oklch(0.55 0.1 255)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Recorded Item Card",
+      "kind": "card",
+      "refersTo": "card-recorded",
+      "description": "An entry that actually happened. Solid border = real.",
+      "html": "<button class=\"ds-card-recorded\"><span class=\"ds-card-name\">Monthly Salary</span><span class=\"ds-card-amount\">+$4,650</span></button>",
+      "css": ".ds-card-recorded { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 200px; padding: 4px 6px; background: oklch(0.52 0.11 152 / 0.12); border: 1px solid oklch(0.52 0.11 152 / 0.6); border-radius: 3px; color: oklch(0.46 0.1 152); cursor: pointer; transition: filter 150ms ease-out; } .ds-card-recorded:hover { filter: brightness(0.95); } .ds-card-name { font: 500 11px/1.2 system-ui, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-card-amount { font: 600 11px/1.2 system-ui, sans-serif; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Planned Item Card",
+      "kind": "card",
+      "refersTo": "card-recorded",
+      "description": "An expected item. Dashed border = not yet real.",
+      "html": "<button class=\"ds-card-planned\"><span class=\"ds-card-name\">Rent</span><span class=\"ds-card-amount\">−$1,800</span></button>",
+      "css": ".ds-card-planned { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 200px; padding: 4px 6px; background: oklch(0.45 0.015 250 / 0.04); border: 1px dashed oklch(0.45 0.015 250 / 0.35); border-radius: 3px; color: oklch(0.45 0.015 250 / 0.9); cursor: pointer; } .ds-card-planned:hover { filter: brightness(0.95); } .ds-card-planned .ds-card-name { font: 500 11px/1.2 system-ui, sans-serif; } .ds-card-planned .ds-card-amount { font: 600 11px/1.2 system-ui, sans-serif; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Month Band",
+      "kind": "custom",
+      "refersTo": "band",
+      "description": "The horizon: month label, projected balance, delta chip.",
+      "html": "<div class=\"ds-band\"><span class=\"ds-band-month\">Dec 2026</span><div class=\"ds-band-row\"><span class=\"ds-band-total\">−$9,350</span><span class=\"ds-band-delta ds-band-delta-neg\">−$25,000</span></div></div>",
+      "css": ".ds-band { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 220px; height: 44px; background: oklch(0.32 0.015 255); border-block: 1px solid oklch(0.912 0.006 250 / 0.5); } .ds-band-month { font: 500 10px/1.2 system-ui, sans-serif; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.7); } .ds-band-row { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; } .ds-band-total { font: 600 13px/1.3 system-ui, sans-serif; font-variant-numeric: tabular-nums; color: #fff; } .ds-band-delta { font: 400 10px/1.4 system-ui, sans-serif; font-variant-numeric: tabular-nums; padding: 0 4px; border-radius: 2px; background: rgba(255,255,255,0.1); } .ds-band-delta-neg { color: oklch(0.81 0.11 22); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "button-primary",
+      "description": "shadcn default on the token layer.",
+      "html": "<input class=\"ds-input\" placeholder=\"e.g., Monthly Salary, Rent\" />",
+      "css": ".ds-input { width: 240px; padding: 8px 12px; font: 400 0.875rem/1.4 system-ui, sans-serif; color: oklch(0.21 0.012 250); background: oklch(0.999 0.002 250); border: 1px solid oklch(0.912 0.006 250); border-radius: 8px; } .ds-input::placeholder { color: oklch(0.5 0.014 250); } .ds-input:focus-visible { outline: 2px solid oklch(0.55 0.1 255); outline-offset: -1px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Horizon Ledger",
+    "overview": "The board is a landscape of months: income rises above a dark horizon line, spending hangs below it, and the projected balance rolls across the terrain as a shaded wedge. The horizon (the month band) is the instrument's dial: every number on it must be trustworthy at a glance. The system's personality is calm, precise, trustworthy, a reliable instrument in the register of Linear and the Stripe Dashboard, never a coach, never a toy.",
+    "keyCharacteristics": [
+      "Numbers first: tabular numerals everywhere money appears",
+      "One accent (ink-blue) for actions and 'you are here', ≤10% of any screen",
+      "Solid means recorded, dashed means planned",
+      "Light is the designed default; dark is fully tokened"
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Ink-blue is the only non-semantic color and covers ≤10% of any screen. If blue appears anywhere that isn't an action, a selection, or the user's position, it is wrong.", "section": "colors" },
+      { "name": "The Semantic Lock Rule", "body": "Green, graphite, and red belong to money states exclusively. They are prohibited on chrome, headings, icons, or decoration.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Every currency amount renders with tabular-nums. Proportional digits in a money column are a defect.", "section": "typography" },
+      { "name": "The Flat Ledger Rule", "body": "Surfaces are flat. If a card needs a shadow to be findable, its layout is wrong.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do set every amount in tabular-nums with an explicit sign (+/−) and $ prefix.",
+      "Do keep dashed-vs-solid as the only encoding of planned-vs-recorded.",
+      "Do tint every neutral toward hue 250; chroma between 0.003 and 0.015.",
+      "Do keep the band at a fixed y across all twelve columns under all data."
+    ],
+    "donts": [
+      "Don't use generic fintech SaaS styling: navy/gold gradients, hero-metric cards, glassmorphism.",
+      "Don't drift toward toy budgeting apps: mascots, confetti, gamified streaks, emoji as UI icons.",
+      "Don't rebuild corporate banking portal density: gray bureaucratic forms, compliance-heavy tables.",
+      "Don't use border-left thicker than 1px as a colored accent; side stripes are prohibited.",
+      "Don't use pure #000 or #fff anywhere.",
+      "Don't put green, graphite, or red on anything that isn't money."
+    ]
+  }
+}
