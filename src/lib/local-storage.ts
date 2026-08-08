@@ -160,15 +160,17 @@ export function restoreLocalPlan(plan: LocalPlan, entries: LocalEntry[]): void {
   saveLocalCashflow(cashflow)
 }
 
-export function restoreLocalEntry(entry: LocalEntry): void {
+export function restoreLocalEntry(entry: LocalEntry): boolean {
   const cashflow = getOrCreateLocalCashflow()
-  cashflow.entries.push(entry)
   const plan = cashflow.plans.find((p) => p.id === entry.plan_id)
-  if (plan && plan.frequency === "one-time") {
+  if (!plan) return false
+  cashflow.entries.push(entry)
+  if (plan.frequency === "one-time") {
     plan.status = "completed"
     plan.updated_at = new Date().toISOString()
   }
   saveLocalCashflow(cashflow)
+  return true
 }
 
 export function addLocalEntry(entry: {

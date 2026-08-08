@@ -235,6 +235,7 @@ export function useImportCashflow() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: LocalCashflow) => api.importCashflow(data),
+    meta: { suppressGlobalError: true },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cashflows"] })
     },

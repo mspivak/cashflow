@@ -201,8 +201,11 @@ export function AnonymousApp() {
         action: {
           label: "Undo",
           onClick: () => {
-            restoreLocalEntry(snapshot)
-            refreshData()
+            if (restoreLocalEntry(snapshot)) {
+              refreshData()
+            } else {
+              toast.error("This entry's plan was deleted, so the entry cannot be restored.")
+            }
           },
         },
       })

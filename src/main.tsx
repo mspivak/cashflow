@@ -14,7 +14,8 @@ import "./index.css"
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
-    onError: () => {
+    onError: (_error, _variables, _context, mutation) => {
+      if (mutation.meta?.suppressGlobalError) return
       toast.error("That change was not saved. Check your connection and try again.")
     },
   }),
