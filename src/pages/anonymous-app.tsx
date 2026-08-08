@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { MonthColumn } from "@/components/month-column"
 import { AddItemModal } from "@/components/add-item-modal"
 import { SettingsModal } from "@/components/settings-modal"
+import { toast } from "sonner"
 import {
   getOrCreateLocalCashflow,
   addLocalPlan,
@@ -20,6 +21,8 @@ import {
   updateLocalEntry,
   deleteLocalPlan,
   deleteLocalEntry,
+  restoreLocalPlan,
+  restoreLocalEntry,
   updateLocalSetting,
   setPendingImport,
 } from "@/lib/local-storage"
@@ -137,6 +140,8 @@ export function AnonymousApp() {
     [months, startingBalance]
   )
 
+  const isBoardEmpty = plans.length === 0 && entries.length === 0
+
   const refreshData = useCallback(() => {
     dispatchLocalStorageUpdate()
     forceUpdate({})
@@ -149,8 +154,10 @@ export function AnonymousApp() {
         ...data.entry,
         plan_id: newPlan.id,
       })
+      toast.success(`Recorded $${data.entry.amount.toLocaleString()} for "${data.plan.name}"`)
     } else if (data.plan) {
       addLocalPlan(data.plan)
+      toast.success(`Plan "${data.plan.name}" added`)
     } else if (data.entry) {
       if (editingItem?.type === "entry" && editingItem.entry) {
         updateLocalEntry(editingItem.entry.id, {
@@ -158,8 +165,10 @@ export function AnonymousApp() {
           date: data.entry.date,
           notes: data.entry.notes,
         })
+        toast.success("Entry updated")
       } else {
         addLocalEntry(data.entry)
+        toast.success(`Recorded $${data.entry.amount.toLocaleString()}`)
       }
     }
     setEditingItem(null)
@@ -176,11 +185,45 @@ export function AnonymousApp() {
 
   const handleDeleteItem = (item: MonthItem) => {
     if (item.type === "entry" && item.entry) {
-      deleteLocalEntry(item.entry.id)
+      const e = item.entry
+      const snapshot = {
+        id: e.id,
+        plan_id: e.plan_id,
+        month_year: e.month_year,
+        amount: e.amount,
+        date: e.date,
+        notes: e.notes,
+        created_at: e.created_at,
+      }
+      deleteLocalEntry(e.id)
+      refreshData()
+      toast("Entry deleted", {
+        action: {
+          label: "Undo",
+          onClick: () => {
+            if (restoreLocalEntry(snapshot)) {
+              refreshData()
+            } else {
+              toast.error("This entry's plan was deleted, so the entry cannot be restored.")
+            }
+          },
+        },
+      })
     } else if (item.type === "expected" && item.plan) {
-      deleteLocalPlan(item.plan.id)
+      const removed = deleteLocalPlan(item.plan.id)
+      refreshData()
+      if (removed) {
+        toast(`Deleted "${removed.plan.name}"`, {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              restoreLocalPlan(removed.plan, removed.entries)
+              refreshData()
+            },
+          },
+        })
+      }
     }
-    refreshData()
   }
 
   const handleUpdatePlan = (id: string, data: PlanUpdate) => {
@@ -281,6 +324,7 @@ export function AnonymousApp() {
                 month={month}
                 isCurrentMonth={month.id === currentMonthId}
                 isFirstMonth={index === 0}
+                isBoardEmpty={isBoardEmpty}
                 startingBalance={startingBalance}
                 prevTotal={prevTotal}
                 chartScale={chartScale}
@@ -320,6 +364,7 @@ export function AnonymousApp() {
         editingItem={editingItem}
         categories={categories}
         plans={plans}
+        entries={entries}
         monthIds={monthIds}
         currentMonthId={selectedMonthId || monthIds[0]}
         entryType={entryType}

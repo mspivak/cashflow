@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react"
 import { addMonths, subMonths } from "date-fns"
+import { toast } from "sonner"
 import {
   DndContext,
   DragEndEvent,
@@ -125,32 +126,56 @@ export default function App() {
     [months, startingBalance]
   )
 
+  const isBoardEmpty = plans.length === 0 && entries.length === 0
+
   const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
     if (!canEdit) return
 
     if (data.plan && data.entry) {
       createPlan.mutate(data.plan, {
         onSuccess: (newPlan) => {
-          createEntry.mutate({
-            ...data.entry!,
-            plan_id: newPlan.id,
-          })
+          createEntry.mutate(
+            {
+              ...data.entry!,
+              plan_id: newPlan.id,
+            },
+            {
+              onSuccess: () => {
+                toast.success(`Recorded $${data.entry!.amount.toLocaleString()} for "${data.plan!.name}"`)
+              },
+            }
+          )
         },
       })
     } else if (data.plan) {
-      createPlan.mutate(data.plan)
+      createPlan.mutate(data.plan, {
+        onSuccess: () => {
+          toast.success(`Plan "${data.plan!.name}" added`)
+        },
+      })
     } else if (data.entry) {
       if (editingItem?.type === "entry" && editingItem.entry) {
-        updateEntry.mutate({
-          id: editingItem.entry.id,
-          entry: {
-            amount: data.entry.amount,
-            date: data.entry.date,
-            notes: data.entry.notes,
+        updateEntry.mutate(
+          {
+            id: editingItem.entry.id,
+            entry: {
+              amount: data.entry.amount,
+              date: data.entry.date,
+              notes: data.entry.notes,
+            },
+          },
+          {
+            onSuccess: () => {
+              toast.success("Entry updated")
+            },
+          }
+        )
+      } else {
+        createEntry.mutate(data.entry, {
+          onSuccess: () => {
+            toast.success(`Recorded $${data.entry!.amount.toLocaleString()}`)
           },
         })
-      } else {
-        createEntry.mutate(data.entry)
       }
     }
     setEditingItem(null)
@@ -168,9 +193,64 @@ export default function App() {
     if (!canEdit) return
 
     if (item.type === "entry" && item.entry) {
-      deleteEntry.mutate(item.entry.id)
+      const removed = item.entry
+      deleteEntry.mutate(removed.id, {
+        onSuccess: () => {
+          toast("Entry deleted", {
+            action: {
+              label: "Undo",
+              onClick: () => {
+                createEntry.mutate({
+                  plan_id: removed.plan_id,
+                  month_year: removed.month_year,
+                  amount: removed.amount,
+                  date: removed.date,
+                  notes: removed.notes,
+                })
+              },
+            },
+          })
+        },
+      })
     } else if (item.type === "expected" && item.plan) {
-      deletePlan.mutate(item.plan.id)
+      const removedPlan = item.plan
+      const removedEntries = entries.filter((e) => e.plan_id === removedPlan.id)
+      deletePlan.mutate(removedPlan.id, {
+        onSuccess: () => {
+          toast(`Deleted "${removedPlan.name}"`, {
+            action: {
+              label: "Undo",
+              onClick: () => {
+                createPlan.mutate(
+                  {
+                    category_id: removedPlan.category_id,
+                    name: removedPlan.name,
+                    expected_amount: removedPlan.expected_amount,
+                    frequency: removedPlan.frequency,
+                    expected_day: removedPlan.expected_day,
+                    start_month: removedPlan.start_month,
+                    end_month: removedPlan.end_month,
+                    notes: removedPlan.notes,
+                  },
+                  {
+                    onSuccess: (newPlan) => {
+                      for (const e of removedEntries) {
+                        createEntry.mutate({
+                          plan_id: newPlan.id,
+                          month_year: e.month_year,
+                          amount: e.amount,
+                          date: e.date,
+                          notes: e.notes,
+                        })
+                      }
+                    },
+                  }
+                )
+              },
+            },
+          })
+        },
+      })
     }
   }
 
@@ -214,23 +294,26 @@ export default function App() {
   }
 
   const handleCreateCashflow = (name: string, description?: string) => {
-    console.log("handleCreateCashflow called with:", name, description)
     createCashflow.mutate(
       { name, description },
       {
         onSuccess: (newCashflow) => {
-          console.log("Cashflow created:", newCashflow)
           setCurrentCashflow(newCashflow)
-        },
-        onError: (error) => {
-          console.error("Failed to create cashflow:", error)
+          toast.success(`"${newCashflow.name}" created`)
         },
       }
     )
   }
 
   const handleInviteMember = (email: string, role: MemberRole) => {
-    inviteMember.mutate({ cashflowId, email, role })
+    inviteMember.mutate(
+      { cashflowId, email, role },
+      {
+        onSuccess: () => {
+          toast.success(`Invitation sent to ${email}`)
+        },
+      }
+    )
   }
 
   const handleUpdateMemberRole = (userId: string, role: MemberRole) => {
@@ -304,6 +387,7 @@ export default function App() {
                 month={month}
                 isCurrentMonth={month.id === currentMonthId}
                 isFirstMonth={index === 0}
+                isBoardEmpty={isBoardEmpty}
                 startingBalance={startingBalance}
                 prevTotal={prevTotal}
                 chartScale={chartScale}
@@ -343,6 +427,7 @@ export default function App() {
         editingItem={editingItem}
         categories={categories}
         plans={plans}
+        entries={entries}
         monthIds={monthIds}
         currentMonthId={selectedMonthId || monthIds[0]}
         entryType={entryType}

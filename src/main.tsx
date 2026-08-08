@@ -1,7 +1,8 @@
 import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { Toaster, toast } from "sonner"
 import { useCurrentUser, useCashflows, useImportCashflow } from "@/hooks/use-items"
 import { CashflowProvider } from "@/context/cashflow-context"
 import { LoginPage } from "@/pages/login"
@@ -12,6 +13,12 @@ import App from "./App"
 import "./index.css"
 
 const queryClient = new QueryClient({
+  mutationCache: new MutationCache({
+    onError: (_error, _variables, _context, mutation) => {
+      if (mutation.meta?.suppressGlobalError) return
+      toast.error("That change was not saved. Check your connection and try again.")
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60,
@@ -37,8 +44,8 @@ function AuthenticatedApp() {
             await refetch()
             setLocalPendingImport(false)
           },
-          onError: async (error) => {
-            console.error("Failed to import cashflow:", error)
+          onError: async () => {
+            toast.error("Your local budget could not be imported. It is still saved in this browser.")
             setPendingImport(false)
             await refetch()
             setLocalPendingImport(false)
@@ -107,6 +114,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <Toaster position="bottom-right" theme="system" />
       <BrowserRouter>
         <Routes>
           <Route

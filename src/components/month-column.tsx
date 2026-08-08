@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { Plus } from "lucide-react";
 import { ItemCard } from "./item-card";
+import { Button } from "@/components/ui/button";
 import type { BoardMaxima } from "@/lib/calculations";
 import type { MonthData, MonthItem } from "@/types";
 
@@ -9,6 +10,7 @@ interface MonthColumnProps {
 	month: MonthData;
 	isCurrentMonth?: boolean;
 	isFirstMonth?: boolean;
+	isBoardEmpty?: boolean;
 	startingBalance?: number;
 	prevTotal: number;
 	chartScale: number;
@@ -25,6 +27,7 @@ export function MonthColumn({
 	month,
 	isCurrentMonth,
 	isFirstMonth,
+	isBoardEmpty,
 	startingBalance,
 	prevTotal,
 	chartScale,
@@ -268,14 +271,28 @@ export function MonthColumn({
 						/>
 					</div>
 				))}
-				{isHovered && onAddIncome && (
+				{onAddIncome && (
 					<button
 						onClick={() => onAddIncome(month.id)}
-						className="flex items-center justify-center gap-1 py-1 text-[10px] text-green-600 hover:bg-green-100 dark:hover:bg-green-950/50 transition-colors rounded mx-0.5 mb-0.5"
+						className={`flex items-center justify-center gap-1 py-1 text-[10px] transition-colors rounded mx-0.5 mb-0.5 focus-visible:outline-2 focus-visible:outline-ring ${
+							isHovered
+								? "text-green-600 hover:bg-green-100 dark:hover:bg-green-950/50"
+								: "text-green-700/50 dark:text-green-500/50"
+						}`}
 					>
 						<Plus className="h-3 w-3" />
 						Income
 					</button>
+				)}
+				{isBoardEmpty && isCurrentMonth && onAddIncome && (
+					<div className="mb-4 flex flex-col items-center gap-2 px-2 text-center">
+						<p className="text-xs text-muted-foreground leading-snug">
+							Plan your income and spending, then record what actually lands.
+						</p>
+						<Button size="sm" onClick={() => onAddIncome(month.id)}>
+							Add your first income
+						</Button>
+					</div>
 				)}
 			</div>
 
@@ -349,10 +366,14 @@ export function MonthColumn({
 						/>
 					</div>
 				))}
-				{isHovered && onAddSpend && (
+				{onAddSpend && (
 					<button
 						onClick={() => onAddSpend(month.id)}
-						className="flex items-center justify-center gap-1 py-1 text-[10px] text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors rounded mx-0.5 mt-0.5"
+						className={`flex items-center justify-center gap-1 py-1 text-[10px] transition-colors rounded mx-0.5 mt-0.5 focus-visible:outline-2 focus-visible:outline-ring ${
+							isHovered
+								? "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800/50"
+								: "text-muted-foreground/60"
+						}`}
 					>
 						<Plus className="h-3 w-3" />
 						Spend

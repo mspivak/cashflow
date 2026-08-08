@@ -37,9 +37,7 @@ export function CashflowSelector({
   const [newDescription, setNewDescription] = useState("")
 
   const handleCreate = () => {
-    console.log("handleCreate called, newName:", newName)
     if (newName.trim()) {
-      console.log("Calling onCreateNew with:", newName.trim())
       onCreateNew(newName.trim(), newDescription.trim() || undefined)
       setNewName("")
       setNewDescription("")
