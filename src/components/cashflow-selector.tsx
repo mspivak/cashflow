@@ -72,7 +72,7 @@ export function CashflowSelector({
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setShowNewDialog(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            New Budget
+            New Cashflow
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -80,7 +80,7 @@ export function CashflowSelector({
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Budget</DialogTitle>
+            <DialogTitle>Create New Cashflow</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">

@@ -45,7 +45,7 @@ function AuthenticatedApp() {
             setLocalPendingImport(false)
           },
           onError: async () => {
-            toast.error("Your local budget could not be imported. It is still saved in this browser.")
+            toast.error("Your local cashflow could not be imported. It is still saved in this browser.")
             setPendingImport(false)
             await refetch()
             setLocalPendingImport(false)
