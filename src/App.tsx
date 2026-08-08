@@ -41,6 +41,7 @@ import {
   generateMonthId,
   generateMonthRange,
   calculateBalances,
+  getBoardMaxima,
 } from "@/lib/calculations"
 import type {
   Plan,
@@ -117,6 +118,11 @@ export default function App() {
   const months = useMemo(
     () => calculateBalances(monthIds, plans, entries, startingBalance),
     [monthIds, plans, entries, startingBalance]
+  )
+
+  const maxima = useMemo(
+    () => getBoardMaxima(months, startingBalance),
+    [months, startingBalance]
   )
 
   const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
@@ -302,6 +308,7 @@ export default function App() {
                 prevTotal={prevTotal}
                 chartScale={chartScale}
                 balanceScale={balanceScale}
+                maxima={maxima}
                 onItemClick={handleItemClick}
                 onAddIncome={canEdit ? (monthId) => {
                   setEntryType("income")

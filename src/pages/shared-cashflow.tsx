@@ -32,6 +32,7 @@ import {
   generateMonthId,
   generateMonthRange,
   calculateBalances,
+  getBoardMaxima,
 } from "@/lib/calculations"
 import type {
   Plan,
@@ -93,6 +94,11 @@ export function SharedCashflowPage() {
   const months = useMemo(
     () => calculateBalances(monthIds, plans, entries, startingBalance),
     [monthIds, plans, entries, startingBalance]
+  )
+
+  const maxima = useMemo(
+    () => getBoardMaxima(months, startingBalance),
+    [months, startingBalance]
   )
 
   const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
@@ -267,6 +273,7 @@ export function SharedCashflowPage() {
                 prevTotal={prevTotal}
                 chartScale={chartScale}
                 balanceScale={balanceScale}
+                maxima={maxima}
                 onItemClick={handleItemClick}
                 onAddIncome={(monthId) => {
                   setEntryType("income")
