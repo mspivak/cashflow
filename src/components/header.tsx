@@ -46,28 +46,36 @@ export function Header({
           onCreateNew={onCreateCashflow}
         />
         <span className="text-xs text-muted-foreground">
-          Balance: <span className="font-medium text-foreground">${startingBalance.toLocaleString()}</span>
+          Starting balance: <span className="font-medium text-foreground">${startingBalance.toLocaleString()}</span>
         </span>
         <div className="flex items-center gap-1 ml-2">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Previous months"
             onClick={onPrevious}
-            className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors"
+            className="h-6 w-6 text-muted-foreground"
           >
             <ChevronLeft className="h-4 w-4" />
-          </button>
+          </Button>
           <span className="text-[11px] text-muted-foreground">{dateRange}</span>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Next months"
             onClick={onNext}
-            className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors"
+            className="h-6 w-6 text-muted-foreground"
           >
             <ChevronRight className="h-4 w-4" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onToday}
-            className="ml-1 px-2 py-0.5 text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+            className="ml-1 h-6 px-2 text-[11px]"
           >
             Today
-          </button>
+          </Button>
         </div>
       </div>
       <div className="flex gap-1.5 items-center">

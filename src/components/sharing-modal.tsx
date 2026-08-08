@@ -91,7 +91,7 @@ export function SharingModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Share Budget</DialogTitle>
+          <DialogTitle>Share Cashflow</DialogTitle>
         </DialogHeader>
 
         {isOwner && shareId && onTogglePublic && (
@@ -167,7 +167,7 @@ export function SharingModal({
               Send Invite
             </Button>
             <p className="text-xs text-muted-foreground">
-              The user must have an account. They'll see this budget after logging in.
+              The user must have an account. They'll see this cashflow after logging in.
             </p>
           </div>
         )}

@@ -142,7 +142,7 @@ export function SharedCashflowPage() {
         </Link>
       </div>
 
-      <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-auto pl-6 scrollbar-hide">
+      <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-auto pl-6">
         {months.map((month, index) => {
           const prevTotal =
             index === 0

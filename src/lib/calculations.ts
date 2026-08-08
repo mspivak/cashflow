@@ -201,14 +201,3 @@ export function getBoardMaxima(
   return { income, expense, balance }
 }
 
-export function findEarliestAffordableMonth(
-  amount: number,
-  months: MonthData[]
-): string | null {
-  for (const month of months) {
-    if (month.cumulativeExpected >= amount) {
-      return month.id
-    }
-  }
-  return null
-}

@@ -291,17 +291,17 @@ export function AnonymousApp() {
         <h1 className="text-xl font-semibold">{cashflow.name}</h1>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={loadPreviousMonths}>
+          <Button variant="ghost" size="icon" aria-label="Previous months" onClick={loadPreviousMonths}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="sm" onClick={goToToday} className="gap-1">
             <Calendar className="h-4 w-4" />
             {dateRange}
           </Button>
-          <Button variant="ghost" size="icon" onClick={loadNextMonths}>
+          <Button variant="ghost" size="icon" aria-label="Next months" onClick={loadNextMonths}>
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setShowSettingsModal(true)}>
+          <Button variant="ghost" size="icon" aria-label="Settings" onClick={() => setShowSettingsModal(true)}>
             <Settings className="h-4 w-4" />
           </Button>
         </div>
@@ -312,7 +312,7 @@ export function AnonymousApp() {
         onDragEnd={handleDragEnd}
         collisionDetection={pointerWithin}
       >
-        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-auto pl-6 scrollbar-hide">
+        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-auto pl-6">
           {months.map((month, index) => {
             const prevTotal =
               index === 0
