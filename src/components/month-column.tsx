@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { Plus } from "lucide-react";
 import { ItemCard } from "./item-card";
+import type { BoardMaxima } from "@/lib/calculations";
 import type { MonthData, MonthItem } from "@/types";
 
 interface MonthColumnProps {
@@ -12,6 +13,7 @@ interface MonthColumnProps {
 	prevTotal: number;
 	chartScale: number;
 	balanceScale: number;
+	maxima: BoardMaxima;
 	onItemClick: (item: MonthItem) => void;
 	onAddIncome?: (monthId: string) => void;
 	onAddSpend?: (monthId: string) => void;
@@ -27,6 +29,7 @@ export function MonthColumn({
 	prevTotal,
 	chartScale,
 	balanceScale,
+	maxima,
 	onItemClick,
 	onAddIncome,
 	onAddSpend,
@@ -65,30 +68,12 @@ export function MonthColumn({
 		return { incomeItems: income, expenseItems: expense };
 	}, [month.items]);
 
-	const getItemHeight = (item: MonthItem) => {
-		const amount =
-			item.type === "entry" ? item.entry!.amount : item.plan!.expected_amount;
-		return (amount / 1000) * chartScale;
-	};
-
-	const startingBalancePosition = useMemo(() => {
-		if (!startingBalance || startingBalance <= 0) return 0;
-		return (startingBalance / 1000) * balanceScale;
-	}, [startingBalance, balanceScale]);
-
-	const totalPosition = useMemo(() => {
-		return (Math.abs(month.cumulativeExpected) / 1000) * balanceScale;
-	}, [month.cumulativeExpected, balanceScale]);
-
-	const prevTotalPosition = useMemo(() => {
-		return (Math.abs(prevTotal) / 1000) * balanceScale;
-	}, [prevTotal, balanceScale]);
-
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerHeight, setContainerHeight] = useState(0);
 	const [containerWidth, setContainerWidth] = useState(0);
 	const CENTER_HEIGHT = 36;
 	const GAP = 8;
+	const STACK_RESERVE = 28;
 
 	useEffect(() => {
 		if (containerRef.current) {
@@ -100,6 +85,49 @@ export function MonthColumn({
 			return () => observer.disconnect();
 		}
 	}, []);
+
+	const sectionHeight = Math.max(0, (containerHeight - CENTER_HEIGHT) / 2);
+
+	const { effectiveChartScale, effectiveBalanceScale } = useMemo(() => {
+		if (containerHeight === 0) {
+			return {
+				effectiveChartScale: chartScale,
+				effectiveBalanceScale: balanceScale,
+			};
+		}
+		const maxStack = Math.max(maxima.income, maxima.expense);
+		const fitChart =
+			maxStack > 0
+				? Math.max(0, sectionHeight - STACK_RESERVE) / (maxStack / 1000)
+				: chartScale;
+		const fitBalance =
+			maxima.balance > 0
+				? Math.max(0, sectionHeight - GAP) / (maxima.balance / 1000)
+				: balanceScale;
+		return {
+			effectiveChartScale: Math.min(chartScale, fitChart),
+			effectiveBalanceScale: Math.min(balanceScale, fitBalance),
+		};
+	}, [containerHeight, sectionHeight, chartScale, balanceScale, maxima]);
+
+	const getItemHeight = (item: MonthItem) => {
+		const amount =
+			item.type === "entry" ? item.entry!.amount : item.plan!.expected_amount;
+		return (amount / 1000) * effectiveChartScale;
+	};
+
+	const startingBalancePosition = useMemo(() => {
+		if (!startingBalance || startingBalance <= 0) return 0;
+		return (startingBalance / 1000) * effectiveBalanceScale;
+	}, [startingBalance, effectiveBalanceScale]);
+
+	const totalPosition = useMemo(() => {
+		return (Math.abs(month.cumulativeExpected) / 1000) * effectiveBalanceScale;
+	}, [month.cumulativeExpected, effectiveBalanceScale]);
+
+	const prevTotalPosition = useMemo(() => {
+		return (Math.abs(prevTotal) / 1000) * effectiveBalanceScale;
+	}, [prevTotal, effectiveBalanceScale]);
 
 	const getYPosition = (total: number, position: number) => {
 		const sectionHeight = (containerHeight - CENTER_HEIGHT) / 2;
@@ -198,7 +226,7 @@ export function MonthColumn({
 						</svg>
 					);
 				})()}
-			<div className="flex-1 flex flex-col-reverse overflow-visible relative z-10">
+			<div className="flex-1 min-h-0 basis-0 flex flex-col-reverse overflow-visible relative z-10">
 				{isFirstMonth &&
 					startingBalance !== undefined &&
 					startingBalance > 0 && (
@@ -290,7 +318,7 @@ export function MonthColumn({
 				</div>
 			</div>
 
-			<div className="flex-1 flex flex-col overflow-visible relative z-10">
+			<div className="flex-1 min-h-0 basis-0 flex flex-col overflow-visible relative z-10">
 				{month.cumulativeExpected < 0 && (
 					<div
 						className="absolute w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow z-40 pointer-events-none"

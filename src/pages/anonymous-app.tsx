@@ -25,6 +25,8 @@ import {
 } from "@/lib/local-storage"
 import { loginWithGoogle } from "@/lib/api"
 import {
+  calculateBalances,
+  getBoardMaxima,
   generateMonthId,
   generateMonthRange,
 } from "@/lib/calculations"
@@ -36,7 +38,6 @@ import type {
   MonthItem,
   Category,
   Entry,
-  MonthData,
   LocalPlan,
   LocalEntry,
 } from "@/types"
@@ -72,92 +73,6 @@ function localEntryToApiEntry(localEntry: LocalEntry, plans: Plan[]): Entry {
     ...localEntry,
     plan,
   }
-}
-
-function calculateLocalBalances(
-  monthIds: string[],
-  plans: Plan[],
-  entries: Entry[],
-  startingBalance: number
-): MonthData[] {
-  const months: MonthData[] = []
-  let cumulativeExpected = startingBalance
-  let cumulativeActual = startingBalance
-
-  for (const monthId of monthIds) {
-    const monthPlans = plans.filter((plan) => {
-      if (plan.status === "completed") return false
-      const startMonth = plan.start_month
-      const endMonth = plan.end_month
-      if (plan.frequency === "one-time") {
-        return startMonth === monthId
-      }
-      if (startMonth > monthId) return false
-      if (endMonth && endMonth < monthId) return false
-      return true
-    })
-
-    const monthEntries = entries.filter((entry) => entry.month_year === monthId)
-
-    const items: MonthItem[] = []
-
-    for (const plan of monthPlans) {
-      const hasEntry = monthEntries.some((e) => e.plan_id === plan.id)
-      if (!hasEntry) {
-        items.push({
-          type: "expected",
-          plan,
-          month_year: monthId,
-        })
-      }
-    }
-
-    for (const entry of monthEntries) {
-      items.push({
-        type: "entry",
-        entry,
-        month_year: monthId,
-      })
-    }
-
-    const expectedIncome = monthPlans
-      .filter((p) => p.category.type === "income")
-      .reduce((sum, p) => sum + p.expected_amount, 0)
-    const expectedExpense = monthPlans
-      .filter((p) => p.category.type === "expense")
-      .reduce((sum, p) => sum + p.expected_amount, 0)
-    const expectedBalance = expectedIncome - expectedExpense
-
-    const actualIncome = monthEntries
-      .filter((e) => e.plan.category.type === "income")
-      .reduce((sum, e) => sum + e.amount, 0)
-    const actualExpense = monthEntries
-      .filter((e) => e.plan.category.type === "expense")
-      .reduce((sum, e) => sum + e.amount, 0)
-    const actualBalance = actualIncome - actualExpense
-
-    cumulativeExpected += expectedBalance
-    cumulativeActual += actualBalance
-
-    const [year, month] = monthId.split("-")
-    const monthNames = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"
-    ]
-    const name = `${monthNames[parseInt(month) - 1]} ${year}`
-
-    months.push({
-      id: monthId,
-      name,
-      items,
-      expectedBalance,
-      actualBalance,
-      cumulativeExpected,
-      cumulativeActual,
-    })
-  }
-
-  return months
 }
 
 export function AnonymousApp() {
@@ -213,8 +128,13 @@ export function AnonymousApp() {
   }, [settings])
 
   const months = useMemo(
-    () => calculateLocalBalances(monthIds, plans, entries, startingBalance),
+    () => calculateBalances(monthIds, plans, entries, startingBalance),
     [monthIds, plans, entries, startingBalance]
+  )
+
+  const maxima = useMemo(
+    () => getBoardMaxima(months, startingBalance),
+    [months, startingBalance]
   )
 
   const refreshData = useCallback(() => {
@@ -365,6 +285,7 @@ export function AnonymousApp() {
                 prevTotal={prevTotal}
                 chartScale={chartScale}
                 balanceScale={balanceScale}
+                maxima={maxima}
                 onItemClick={handleItemClick}
                 onAddIncome={(monthId) => {
                   setEntryType("income")

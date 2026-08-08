@@ -165,6 +165,42 @@ export function calculateBalances(
   })
 }
 
+export interface BoardMaxima {
+  income: number
+  expense: number
+  balance: number
+}
+
+export function getBoardMaxima(
+  months: MonthData[],
+  startingBalance: number
+): BoardMaxima {
+  let income = 0
+  let expense = 0
+  let balance = Math.abs(startingBalance)
+
+  for (const month of months) {
+    let incomeSum = 0
+    let expenseSum = 0
+    for (const item of month.items) {
+      const amount =
+        item.type === "entry" ? item.entry!.amount : item.plan!.expected_amount
+      const category =
+        item.type === "entry" ? item.entry!.plan.category : item.plan!.category
+      if (category.type === "income") {
+        incomeSum += amount
+      } else {
+        expenseSum += amount
+      }
+    }
+    income = Math.max(income, incomeSum)
+    expense = Math.max(expense, expenseSum)
+    balance = Math.max(balance, Math.abs(month.cumulativeExpected))
+  }
+
+  return { income, expense, balance }
+}
+
 export function findEarliestAffordableMonth(
   amount: number,
   months: MonthData[]
