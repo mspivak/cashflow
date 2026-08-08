@@ -1522,30 +1522,6 @@ def list_public_categories(share_id: str):
     return [dict(row) for row in rows]
 
 
-@app.post("/api/public/{share_id}/categories", status_code=201)
-def create_public_category(share_id: str, category: CategoryBase):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cat_id = str(uuid.uuid4())
-    cursor.execute(
-        "INSERT INTO categories (id, cashflow_id, name, type, icon, color) VALUES (%s, %s, %s, %s, %s, %s)",
-        (
-            cat_id,
-            cashflow_id,
-            category.name,
-            category.type,
-            category.icon,
-            category.color,
-        ),
-    )
-    conn.commit()
-    conn.close()
-    return {"id": cat_id, "cashflow_id": cashflow_id, **category.model_dump()}
-
-
 @app.get("/api/public/{share_id}/plans")
 def list_public_plans(
     share_id: str, status: Optional[str] = None, category_id: Optional[str] = None
@@ -1608,98 +1584,6 @@ def list_public_plans(
         )
 
     return plans
-
-
-@app.post("/api/public/{share_id}/plans", status_code=201)
-def create_public_plan(share_id: str, plan: PlanCreate):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-    plan_id = str(uuid.uuid4())
-    now = date.today().isoformat()
-
-    cursor.execute(
-        """INSERT INTO plans (id, cashflow_id, category_id, name, expected_amount, frequency,
-           expected_day, start_month, end_month, status, notes, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s, %s, %s)""",
-        (
-            plan_id,
-            cashflow_id,
-            plan.category_id,
-            plan.name,
-            plan.expected_amount,
-            plan.frequency,
-            plan.expected_day,
-            plan.start_month,
-            plan.end_month,
-            plan.notes,
-            now,
-            now,
-        ),
-    )
-    conn.commit()
-    result = get_plan_by_id(plan_id, conn)
-    conn.close()
-    return result
-
-
-@app.put("/api/public/{share_id}/plans/{plan_id}")
-def update_public_plan(share_id: str, plan_id: str, plan: PlanUpdate):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-    now = date.today().isoformat()
-
-    cursor.execute(
-        "SELECT id FROM plans WHERE id = %s AND cashflow_id = %s", (plan_id, cashflow_id)
-    )
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Plan not found")
-
-    updates = []
-    params = []
-    data = plan.model_dump(exclude_unset=True)
-
-    for key, value in data.items():
-        updates.append(f"{key} = %s")
-        params.append(value)
-
-    if updates:
-        updates.append("updated_at = %s")
-        params.append(now)
-        params.append(plan_id)
-
-        cursor.execute(f"UPDATE plans SET {', '.join(updates)} WHERE id = %s", params)
-        conn.commit()
-
-    result = get_plan_by_id(plan_id, conn)
-    conn.close()
-    return result
-
-
-@app.delete("/api/public/{share_id}/plans/{plan_id}", status_code=204)
-def delete_public_plan(share_id: str, plan_id: str):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id FROM plans WHERE id = %s AND cashflow_id = %s", (plan_id, cashflow_id)
-    )
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Plan not found")
-
-    cursor.execute("DELETE FROM entries WHERE plan_id = %s", (plan_id,))
-    cursor.execute("DELETE FROM plans WHERE id = %s", (plan_id,))
-    conn.commit()
-    conn.close()
 
 
 @app.get("/api/public/{share_id}/entries")
@@ -1783,109 +1667,6 @@ def list_public_entries(
     return entries
 
 
-@app.post("/api/public/{share_id}/entries", status_code=201)
-def create_public_entry(share_id: str, entry: EntryCreate):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-    entry_id = str(uuid.uuid4())
-    now = date.today().isoformat()
-
-    cursor.execute(
-        "SELECT id, frequency FROM plans WHERE id = %s AND cashflow_id = %s",
-        (entry.plan_id, cashflow_id),
-    )
-    plan_row = cursor.fetchone()
-    if not plan_row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Plan not found")
-
-    cursor.execute(
-        """INSERT INTO entries (id, plan_id, month_year, amount, date, notes, created_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (
-            entry_id,
-            entry.plan_id,
-            entry.month_year,
-            entry.amount,
-            entry.date,
-            entry.notes,
-            now,
-        ),
-    )
-
-    if plan_row["frequency"] == "one-time":
-        cursor.execute(
-            "UPDATE plans SET status = 'completed', updated_at = %s WHERE id = %s",
-            (now, entry.plan_id),
-        )
-
-    conn.commit()
-    result = get_entry_by_id(entry_id, conn)
-    conn.close()
-    return result
-
-
-@app.put("/api/public/{share_id}/entries/{entry_id}")
-def update_public_entry(share_id: str, entry_id: str, entry: EntryUpdate):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """SELECT e.id FROM entries e
-           JOIN plans p ON e.plan_id = p.id
-           WHERE e.id = %s AND p.cashflow_id = %s""",
-        (entry_id, cashflow_id),
-    )
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Entry not found")
-
-    updates = []
-    params = []
-    data = entry.model_dump(exclude_unset=True)
-
-    for key, value in data.items():
-        updates.append(f"{key} = %s")
-        params.append(value)
-
-    if updates:
-        params.append(entry_id)
-        cursor.execute(f"UPDATE entries SET {', '.join(updates)} WHERE id = %s", params)
-        conn.commit()
-
-    result = get_entry_by_id(entry_id, conn)
-    conn.close()
-    return result
-
-
-@app.delete("/api/public/{share_id}/entries/{entry_id}", status_code=204)
-def delete_public_entry(share_id: str, entry_id: str):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(
-        """SELECT e.id FROM entries e
-           JOIN plans p ON e.plan_id = p.id
-           WHERE e.id = %s AND p.cashflow_id = %s""",
-        (entry_id, cashflow_id),
-    )
-    if not cursor.fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="Entry not found")
-
-    cursor.execute("DELETE FROM entries WHERE id = %s", (entry_id,))
-    conn.commit()
-    conn.close()
-
-
 @app.get("/api/public/{share_id}/settings")
 def list_public_settings(share_id: str):
     cashflow = get_public_cashflow(share_id)
@@ -1899,34 +1680,6 @@ def list_public_settings(share_id: str):
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
-
-
-@app.put("/api/public/{share_id}/settings/{key}")
-def update_public_setting(share_id: str, key: str, setting: dict):
-    cashflow = get_public_cashflow(share_id)
-    cashflow_id = cashflow["id"]
-
-    conn = get_db()
-    cursor = conn.cursor()
-    value = setting["value"]
-
-    cursor.execute(
-        "SELECT key FROM settings WHERE cashflow_id = %s AND key = %s", (cashflow_id, key)
-    )
-    if cursor.fetchone():
-        cursor.execute(
-            "UPDATE settings SET value = %s WHERE cashflow_id = %s AND key = %s",
-            (value, cashflow_id, key),
-        )
-    else:
-        cursor.execute(
-            "INSERT INTO settings (cashflow_id, key, value) VALUES (%s, %s, %s)",
-            (cashflow_id, key, value),
-        )
-
-    conn.commit()
-    conn.close()
-    return {"key": key, "value": value}
 
 
 class CashflowImportCategory(BaseModel):

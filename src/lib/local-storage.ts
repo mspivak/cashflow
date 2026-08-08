@@ -142,10 +142,32 @@ export function updateLocalPlan(id: string, updates: Partial<LocalPlan>): LocalP
   return cashflow.plans[index]
 }
 
-export function deleteLocalPlan(id: string): void {
+export function deleteLocalPlan(id: string): { plan: LocalPlan; entries: LocalEntry[] } | null {
   const cashflow = getOrCreateLocalCashflow()
+  const plan = cashflow.plans.find((p) => p.id === id)
+  if (!plan) return null
+  const removedEntries = cashflow.entries.filter((e) => e.plan_id === id)
   cashflow.plans = cashflow.plans.filter((p) => p.id !== id)
   cashflow.entries = cashflow.entries.filter((e) => e.plan_id !== id)
+  saveLocalCashflow(cashflow)
+  return { plan, entries: removedEntries }
+}
+
+export function restoreLocalPlan(plan: LocalPlan, entries: LocalEntry[]): void {
+  const cashflow = getOrCreateLocalCashflow()
+  cashflow.plans.push(plan)
+  cashflow.entries.push(...entries)
+  saveLocalCashflow(cashflow)
+}
+
+export function restoreLocalEntry(entry: LocalEntry): void {
+  const cashflow = getOrCreateLocalCashflow()
+  cashflow.entries.push(entry)
+  const plan = cashflow.plans.find((p) => p.id === entry.plan_id)
+  if (plan && plan.frequency === "one-time") {
+    plan.status = "completed"
+    plan.updated_at = new Date().toISOString()
+  }
   saveLocalCashflow(cashflow)
 }
 

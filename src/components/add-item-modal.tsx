@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { Category, Plan, PlanCreate, PlanUpdate, EntryCreate, MonthItem, Frequency } from "@/types"
+import type { Category, Plan, PlanCreate, PlanUpdate, EntryCreate, Entry, MonthItem, Frequency } from "@/types"
 
 interface AddItemModalProps {
   open: boolean
@@ -28,6 +28,7 @@ interface AddItemModalProps {
   editingItem: MonthItem | null
   categories: Category[]
   plans: Plan[]
+  entries: Entry[]
   monthIds: string[]
   currentMonthId: string
   entryType: "income" | "expense"
@@ -42,11 +43,13 @@ export function AddItemModal({
   editingItem,
   categories,
   plans,
+  entries,
   monthIds,
   currentMonthId,
   entryType,
 }: AddItemModalProps) {
   const [mode, setMode] = useState<"new" | "existing">("new")
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [selectedPlanId, setSelectedPlanId] = useState("")
   const [name, setName] = useState("")
   const [categoryId, setCategoryId] = useState("")
@@ -56,7 +59,7 @@ export function AddItemModal({
   const [amount, setAmount] = useState("")
   const [date, setDate] = useState("")
   const [notes, setNotes] = useState("")
-  const [recordNow, setRecordNow] = useState(true)
+  const [recordNow, setRecordNow] = useState(false)
   const [showPlanEdit, setShowPlanEdit] = useState(false)
   const [planName, setPlanName] = useState("")
   const [planCategoryId, setPlanCategoryId] = useState("")
@@ -90,6 +93,7 @@ export function AddItemModal({
     if (!open) return
 
     setShowPlanEdit(false)
+    setConfirmingDelete(false)
 
     if (editingItem) {
       if (isEditingEntry && editingItem.entry) {
@@ -130,7 +134,7 @@ export function AddItemModal({
       setAmount("")
       setDate(new Date().toISOString().split("T")[0])
       setNotes("")
-      setRecordNow(true)
+      setRecordNow(false)
       setPlanName("")
       setPlanCategoryId("")
       setPlanExpectedAmount("")
@@ -233,6 +237,14 @@ export function AddItemModal({
     : mode === "existing"
       ? selectedPlanId && amount && parseFloat(amount) > 0
       : name && categoryId && expectedAmount && parseFloat(expectedAmount) > 0 && (!recordNow || (amount && parseFloat(amount) > 0))
+
+  const deleteScopeText = useMemo(() => {
+    const plan = editingItem?.plan
+    if (!plan) return "Delete this plan?"
+    const entryCount = entries.filter((e) => e.plan_id === plan.id).length
+    if (entryCount === 0) return `Delete "${plan.name}"?`
+    return `Delete "${plan.name}" and its ${entryCount} recorded ${entryCount === 1 ? "entry" : "entries"}?`
+  }, [editingItem, entries])
 
   const title = isEditingEntry
     ? "Edit Entry"
@@ -512,44 +524,62 @@ export function AddItemModal({
               )}
         </div>
 
-        <DialogFooter className="flex justify-between sm:justify-between">
-          {editingItem ? (
-            <Button
-              variant="destructive"
-              onClick={() => {
-                onDelete(editingItem)
-                onOpenChange(false)
-              }}
-            >
-              Delete
-            </Button>
-          ) : (
-            <div />
-          )}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            {isRecordingExpected ? (
-              <>
-                <Button
-                  variant="secondary"
-                  onClick={handleSavePlanOnly}
-                  disabled={!canSavePlan}
-                >
-                  Save Plan
-                </Button>
-                <Button onClick={handleSave} disabled={!canSave}>
-                  Record Payment
-                </Button>
-              </>
-            ) : (
-              <Button onClick={handleSave} disabled={!canSave}>
-                {isEditingEntry ? "Update" : "Save"}
+        {confirmingDelete && editingItem ? (
+          <DialogFooter className="flex items-center justify-between sm:justify-between border-t pt-4">
+            <span className="text-sm">
+              {isEditingEntry
+                ? "Delete this entry?"
+                : deleteScopeText}
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setConfirmingDelete(false)}>
+                Keep
               </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  onDelete(editingItem)
+                  onOpenChange(false)
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </DialogFooter>
+        ) : (
+          <DialogFooter className="flex justify-between sm:justify-between">
+            {editingItem ? (
+              <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmingDelete(true)}>
+                Delete
+              </Button>
+            ) : (
+              <div />
             )}
-          </div>
-        </DialogFooter>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              {isRecordingExpected ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={handleSavePlanOnly}
+                    disabled={!canSavePlan}
+                  >
+                    Save Plan
+                  </Button>
+                  <Button onClick={handleSave} disabled={!canSave}>
+                    Record Payment
+                  </Button>
+                </>
+              ) : (
+                <Button onClick={handleSave} disabled={!canSave}>
+                  {isEditingEntry ? "Update" : "Save"}
+                </Button>
+              )}
+            </div>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )

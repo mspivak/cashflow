@@ -1,18 +1,9 @@
 import { useState, useMemo } from "react"
 import { useParams, Link } from "react-router-dom"
 import { addMonths, subMonths } from "date-fns"
-import {
-  DndContext,
-  DragEndEvent,
-  pointerWithin,
-  useSensor,
-  useSensors,
-  PointerSensor,
-} from "@dnd-kit/core"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { MonthColumn } from "@/components/month-column"
-import { AddItemModal } from "@/components/add-item-modal"
 import { SettingsModal } from "@/components/settings-modal"
 import {
   usePublicCashflow,
@@ -20,13 +11,6 @@ import {
   usePublicPlans,
   usePublicEntries,
   usePublicSettings,
-  useCreatePublicPlan,
-  useCreatePublicEntry,
-  useUpdatePublicEntry,
-  useDeletePublicEntry,
-  useDeletePublicPlan,
-  useUpdatePublicPlan,
-  useUpdatePublicSetting,
 } from "@/hooks/use-items"
 import {
   generateMonthId,
@@ -34,14 +18,7 @@ import {
   calculateBalances,
   getBoardMaxima,
 } from "@/lib/calculations"
-import type {
-  Plan,
-  PlanCreate,
-  PlanUpdate,
-  EntryCreate,
-  MonthItem,
-} from "@/types"
-import { ChevronLeft, ChevronRight, Calendar, Settings } from "lucide-react"
+import { ChevronLeft, ChevronRight, Calendar, Settings, Eye } from "lucide-react"
 
 const MONTHS_PER_PAGE = 12
 
@@ -56,25 +33,13 @@ export function SharedCashflowPage() {
     [startDate]
   )
 
-  const [showAddModal, setShowAddModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
-  const [entryType, setEntryType] = useState<"income" | "expense">("income")
-  const [editingItem, setEditingItem] = useState<MonthItem | null>(null)
-  const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
 
   const { data: cashflow, isLoading: cashflowLoading, isError } = usePublicCashflow(shareId || "")
   const { data: entries = [], isLoading: entriesLoading } = usePublicEntries(shareId || "")
-  const { data: categories = [], isLoading: categoriesLoading } = usePublicCategories(shareId || "")
+  const { isLoading: categoriesLoading } = usePublicCategories(shareId || "")
   const { data: plans = [], isLoading: plansLoading } = usePublicPlans(shareId || "")
   const { data: settings = [], isLoading: settingsLoading } = usePublicSettings(shareId || "")
-
-  const createPlan = useCreatePublicPlan(shareId || "")
-  const createEntry = useCreatePublicEntry(shareId || "")
-  const updateEntry = useUpdatePublicEntry(shareId || "")
-  const deleteEntry = useDeletePublicEntry(shareId || "")
-  const deletePlan = useDeletePublicPlan(shareId || "")
-  const updatePlan = useUpdatePublicPlan(shareId || "")
-  const updateSetting = useUpdatePublicSetting(shareId || "")
 
   const startingBalance = useMemo(() => {
     const setting = settings.find((s) => s.key === "starting_balance")
@@ -101,74 +66,6 @@ export function SharedCashflowPage() {
     [months, startingBalance]
   )
 
-  const handleSave = (data: { plan?: PlanCreate; entry?: EntryCreate }) => {
-    if (data.plan && data.entry) {
-      createPlan.mutate(data.plan, {
-        onSuccess: (newPlan) => {
-          createEntry.mutate({
-            ...data.entry!,
-            plan_id: newPlan.id,
-          })
-        },
-      })
-    } else if (data.plan) {
-      createPlan.mutate(data.plan)
-    } else if (data.entry) {
-      if (editingItem?.type === "entry" && editingItem.entry) {
-        updateEntry.mutate({
-          id: editingItem.entry.id,
-          entry: {
-            amount: data.entry.amount,
-            date: data.entry.date,
-            notes: data.entry.notes,
-          },
-        })
-      } else {
-        createEntry.mutate(data.entry)
-      }
-    }
-    setEditingItem(null)
-  }
-
-  const handleItemClick = (item: MonthItem) => {
-    const category =
-      item.type === "entry" ? item.entry!.plan.category : item.plan!.category
-    setEntryType(category.type)
-    setEditingItem(item)
-    setShowAddModal(true)
-  }
-
-  const handleDeleteItem = (item: MonthItem) => {
-    if (item.type === "entry" && item.entry) {
-      deleteEntry.mutate(item.entry.id)
-    } else if (item.type === "expected" && item.plan) {
-      deletePlan.mutate(item.plan.id)
-    }
-  }
-
-  const handleUpdatePlan = (id: string, data: PlanUpdate) => {
-    updatePlan.mutate({ id, plan: data })
-  }
-
-  const handleUpdateSetting = (key: string, value: string) => {
-    updateSetting.mutate({ key, value })
-  }
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over) return
-
-    const targetMonthId = over.id as string
-    const dragData = active.data.current as { item: MonthItem; plan: Plan }
-
-    if (dragData.item.month_year === targetMonthId) return
-
-    updatePlan.mutate({
-      id: dragData.plan.id,
-      plan: { start_month: targetMonthId },
-    })
-  }
-
   const loadPreviousMonths = () => {
     setStartDate((d) => subMonths(d, MONTHS_PER_PAGE))
   }
@@ -180,14 +77,6 @@ export function SharedCashflowPage() {
   const goToToday = () => {
     setStartDate(new Date())
   }
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  )
 
   const isLoading =
     cashflowLoading || entriesLoading || categoriesLoading || plansLoading || settingsLoading
@@ -223,24 +112,25 @@ export function SharedCashflowPage() {
     <div className="p-4 bg-background h-screen flex flex-col overflow-hidden">
       <div className="flex items-center justify-between mb-2 gap-4">
         <div className="flex items-center gap-4">
-          <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm">
-            Shared Cashflow
+          <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-1.5">
+            <Eye className="h-3.5 w-3.5" />
+            Shared cashflow · view only
           </div>
           <h1 className="text-xl font-semibold">{cashflow?.name}</h1>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={loadPreviousMonths}>
+          <Button variant="ghost" size="icon" aria-label="Previous months" onClick={loadPreviousMonths}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="sm" onClick={goToToday} className="gap-1">
             <Calendar className="h-4 w-4" />
             {dateRange}
           </Button>
-          <Button variant="ghost" size="icon" onClick={loadNextMonths}>
+          <Button variant="ghost" size="icon" aria-label="Next months" onClick={loadNextMonths}>
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setShowSettingsModal(true)}>
+          <Button variant="ghost" size="icon" aria-label="View settings" onClick={() => setShowSettingsModal(true)}>
             <Settings className="h-4 w-4" />
           </Button>
         </div>
@@ -252,73 +142,35 @@ export function SharedCashflowPage() {
         </Link>
       </div>
 
-      <DndContext
-        sensors={sensors}
-        onDragEnd={handleDragEnd}
-        collisionDetection={pointerWithin}
-      >
-        <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-auto pl-6 scrollbar-hide">
-          {months.map((month, index) => {
-            const prevTotal =
-              index === 0
-                ? startingBalance
-                : months[index - 1].cumulativeExpected
-            return (
-              <MonthColumn
-                key={month.id}
-                month={month}
-                isCurrentMonth={month.id === currentMonthId}
-                isFirstMonth={index === 0}
-                startingBalance={startingBalance}
-                prevTotal={prevTotal}
-                chartScale={chartScale}
-                balanceScale={balanceScale}
-                maxima={maxima}
-                onItemClick={handleItemClick}
-                onAddIncome={(monthId) => {
-                  setEntryType("income")
-                  setEditingItem(null)
-                  setSelectedMonthId(monthId)
-                  setShowAddModal(true)
-                }}
-                onAddSpend={(monthId) => {
-                  setEntryType("expense")
-                  setEditingItem(null)
-                  setSelectedMonthId(monthId)
-                  setShowAddModal(true)
-                }}
-              />
-            )
-          })}
-        </div>
-      </DndContext>
-
-      <AddItemModal
-        open={showAddModal}
-        onOpenChange={(open) => {
-          setShowAddModal(open)
-          if (!open) {
-            setEditingItem(null)
-            setSelectedMonthId(null)
-          }
-        }}
-        onSave={handleSave}
-        onUpdatePlan={handleUpdatePlan}
-        onDelete={handleDeleteItem}
-        editingItem={editingItem}
-        categories={categories}
-        plans={plans}
-        monthIds={monthIds}
-        currentMonthId={selectedMonthId || monthIds[0]}
-        entryType={entryType}
-      />
+      <div className="flex gap-2 flex-1 overflow-x-auto overflow-y-auto pl-6 scrollbar-hide">
+        {months.map((month, index) => {
+          const prevTotal =
+            index === 0
+              ? startingBalance
+              : months[index - 1].cumulativeExpected
+          return (
+            <MonthColumn
+              key={month.id}
+              month={month}
+              isCurrentMonth={month.id === currentMonthId}
+              isFirstMonth={index === 0}
+              startingBalance={startingBalance}
+              prevTotal={prevTotal}
+              chartScale={chartScale}
+              balanceScale={balanceScale}
+              maxima={maxima}
+              onItemClick={() => {}}
+            />
+          )
+        })}
+      </div>
 
       <SettingsModal
         open={showSettingsModal}
         onOpenChange={setShowSettingsModal}
         settings={settings}
-        onSave={handleUpdateSetting}
-        canEdit={true}
+        onSave={() => {}}
+        canEdit={false}
       />
     </div>
   )

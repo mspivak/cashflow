@@ -108,7 +108,7 @@ export function SharingModal({
                     Public Link
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    {isPublic ? "Anyone with the link can view and edit" : "Only members can access"}
+                    {isPublic ? "Anyone with the link can view. Invite members to allow editing." : "Only members can access"}
                   </p>
                 </div>
               </div>
