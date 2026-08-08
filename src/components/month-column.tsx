@@ -318,7 +318,7 @@ export function MonthColumn({
 					</span>
 					<span
 						className={`text-[10px] tabular-nums px-1 rounded-sm bg-white/10 ${
-							monthDelta >= 0 ? "text-emerald-300" : "text-red-300"
+							monthDelta >= 0 ? "text-emerald-200" : "text-red-200"
 						}`}
 						title={
 							showExpectedHint

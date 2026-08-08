@@ -5,9 +5,9 @@ colors:
   paper: "oklch(0.984 0.003 250)"
   ink: "oklch(0.21 0.012 250)"
   ink-blue: "oklch(0.45 0.13 255)"
-  ledger-green: "oklch(0.52 0.11 152)"
-  graphite: "oklch(0.45 0.015 250)"
-  alarm-red: "oklch(0.55 0.19 25)"
+  ledger-green: "oklch(0.46 0.1 152)"
+  graphite: "oklch(0.42 0.015 250)"
+  alarm-red: "oklch(0.5 0.18 25)"
   band-ink: "oklch(0.32 0.015 255)"
   band-red: "oklch(0.44 0.15 25)"
   mist: "oklch(0.955 0.005 250)"
@@ -89,9 +89,9 @@ Paper-and-ink neutrals with one decisive blue accent and three semantic money co
 - **Band Ink** (oklch(0.32 0.015 255)): the month band, the horizon line itself.
 
 ### Semantic (data only)
-- **Ledger Green** (oklch(0.52 0.11 152)): income, and only income.
-- **Graphite** (oklch(0.45 0.015 250)): spending. Deliberately quiet; spending is normal, not alarming.
-- **Alarm Red** (oklch(0.55 0.19 25)): negative balance, debt risk, destructive actions. **Band Red** (oklch(0.44 0.15 25)) is its band variant.
+- **Ledger Green** (oklch(0.46 0.1 152)): income, and only income.
+- **Graphite** (oklch(0.42 0.015 250)): spending. Deliberately quiet; spending is normal, not alarming.
+- **Alarm Red** (oklch(0.5 0.18 25)): negative balance, debt risk, destructive actions. **Band Red** (oklch(0.44 0.15 25)) is its band variant.
 
 ### Named Rules
 **The One Accent Rule.** Ink-blue is the only non-semantic color and covers ≤10% of any screen. If blue appears anywhere that isn't an action, a selection, or the user's position, it is wrong.
@@ -132,7 +132,7 @@ Flat by default. Depth is conveyed by tonal layering (paper → mist → band in
 ### The Month Band (signature)
 - 44px dark band (Band Ink; Band Red when the projected balance is negative) running at a fixed y across every column.
 - Line 1: month label (10px, uppercase, white 70%).
-- Line 2: projected balance (13px, semibold, tabular, white) + monthly delta chip (10px, white/10 pill, emerald-300 positive / red-300 negative). Recorded-vs-planned detail lives in the chip's tooltip.
+- Line 2: projected balance (13px, semibold, tabular, white) + monthly delta chip (10px, white/10 pill, emerald-200 positive / red-200 negative). Recorded-vs-planned detail lives in the chip's tooltip.
 
 ### Buttons
 - **Primary:** Ink Blue fill, paper text, 8px radius (shadcn default sizing).
