@@ -15,6 +15,7 @@ import { MonthColumn } from "@/components/month-column"
 import { AddItemModal } from "@/components/add-item-modal"
 import { SettingsModal } from "@/components/settings-modal"
 import { SharingModal } from "@/components/sharing-modal"
+import { BoardLegend } from "@/components/board-legend"
 import { useCashflowContext } from "@/context/cashflow-context"
 import {
   useEntries,
@@ -411,6 +412,8 @@ export default function App() {
           })}
         </div>
       </DndContext>
+
+      <BoardLegend />
 
       <AddItemModal
         open={showAddModal}

@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { MonthColumn } from "@/components/month-column"
 import { SettingsModal } from "@/components/settings-modal"
+import { BoardLegend } from "@/components/board-legend"
 import {
   usePublicCashflow,
   usePublicCategories,
@@ -159,11 +160,14 @@ export function SharedCashflowPage() {
               chartScale={chartScale}
               balanceScale={balanceScale}
               maxima={maxima}
+              interactive={false}
               onItemClick={() => {}}
             />
           )
         })}
       </div>
+
+      <BoardLegend />
 
       <SettingsModal
         open={showSettingsModal}

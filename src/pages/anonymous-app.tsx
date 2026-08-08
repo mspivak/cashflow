@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { MonthColumn } from "@/components/month-column"
 import { AddItemModal } from "@/components/add-item-modal"
 import { SettingsModal } from "@/components/settings-modal"
+import { BoardLegend } from "@/components/board-legend"
 import { toast } from "sonner"
 import {
   getOrCreateLocalCashflow,
@@ -348,6 +349,8 @@ export function AnonymousApp() {
           })}
         </div>
       </DndContext>
+
+      <BoardLegend />
 
       <AddItemModal
         open={showAddModal}

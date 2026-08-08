@@ -11,6 +11,7 @@ interface MonthColumnProps {
 	isCurrentMonth?: boolean;
 	isFirstMonth?: boolean;
 	isBoardEmpty?: boolean;
+	interactive?: boolean;
 	startingBalance?: number;
 	prevTotal: number;
 	chartScale: number;
@@ -28,6 +29,7 @@ export function MonthColumn({
 	isCurrentMonth,
 	isFirstMonth,
 	isBoardEmpty,
+	interactive = true,
 	startingBalance,
 	prevTotal,
 	chartScale,
@@ -46,15 +48,20 @@ export function MonthColumn({
 
 	const isNegativeBalance = month.cumulativeExpected < 0;
 
+	const monthDelta = hasActual ? month.actualBalance : month.expectedBalance;
+	const showExpectedHint =
+		hasActual && month.actualBalance !== month.expectedBalance;
+
+	const formatDelta = (n: number) =>
+		`${n >= 0 ? "+" : "−"}$${Math.abs(n).toLocaleString()}`;
+
 	const bgClass = isCurrentMonth
-		? "bg-blue-50 dark:bg-blue-950/30"
+		? "bg-primary/5"
 		: isOver
-		? "bg-blue-100 dark:bg-blue-900/30"
+		? "bg-primary/10"
 		: "bg-muted/30";
 
-	const centerBgClass = isNegativeBalance
-		? "bg-red-600 dark:bg-red-700"
-		: "bg-neutral-500 dark:bg-neutral-600";
+	const centerBgClass = isNegativeBalance ? "bg-band-negative" : "bg-band";
 
 	const { incomeItems, expenseItems } = useMemo(() => {
 		const income: MonthItem[] = [];
@@ -74,7 +81,7 @@ export function MonthColumn({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerHeight, setContainerHeight] = useState(0);
 	const [containerWidth, setContainerWidth] = useState(0);
-	const CENTER_HEIGHT = 36;
+	const CENTER_HEIGHT = 44;
 	const GAP = 8;
 	const STACK_RESERVE = 28;
 
@@ -181,13 +188,13 @@ export function MonthColumn({
 							{prevTotal >= 0 && month.cumulativeExpected >= 0 && (
 								<polygon
 									points={`${startX},${prevY} ${x2},${currentY} ${x2},${incomeBaseY} ${startX},${incomeBaseY}`}
-									fill="rgba(156, 163, 175, 0.3)"
+									fill="var(--wedge)"
 								/>
 							)}
 							{prevTotal < 0 && month.cumulativeExpected < 0 && (
 								<polygon
 									points={`${startX},${prevY} ${x2},${currentY} ${x2},${expenseBaseY} ${startX},${expenseBaseY}`}
-									fill="rgba(239, 68, 68, 0.3)"
+									fill="var(--wedge-negative)"
 								/>
 							)}
 							{prevTotal >= 0 &&
@@ -199,11 +206,11 @@ export function MonthColumn({
 										<>
 											<polygon
 												points={`${startX},${prevY} ${crossXIncome},${incomeBaseY} ${startX},${incomeBaseY}`}
-												fill="rgba(156, 163, 175, 0.3)"
+												fill="var(--wedge)"
 											/>
 											<polygon
 												points={`${crossXExpense},${expenseBaseY} ${x2},${currentY} ${x2},${expenseBaseY}`}
-												fill="rgba(239, 68, 68, 0.3)"
+												fill="var(--wedge-negative)"
 											/>
 										</>
 									);
@@ -217,11 +224,11 @@ export function MonthColumn({
 										<>
 											<polygon
 												points={`${startX},${prevY} ${crossXExpense},${expenseBaseY} ${startX},${expenseBaseY}`}
-												fill="rgba(239, 68, 68, 0.3)"
+												fill="var(--wedge-negative)"
 											/>
 											<polygon
 												points={`${crossXIncome},${incomeBaseY} ${x2},${currentY} ${x2},${incomeBaseY}`}
-												fill="rgba(156, 163, 175, 0.3)"
+												fill="var(--wedge)"
 											/>
 										</>
 									);
@@ -234,7 +241,7 @@ export function MonthColumn({
 					startingBalance !== undefined &&
 					startingBalance > 0 && (
 						<div
-							className="absolute w-3.5 h-3.5 bg-blue-500 rounded-sm border-2 border-white shadow z-50 pointer-events-none"
+							className="absolute w-3.5 h-3.5 bg-primary rounded-sm border-2 border-background shadow z-50 pointer-events-none"
 							style={{
 								bottom: startingBalancePosition,
 								left: -10,
@@ -245,7 +252,7 @@ export function MonthColumn({
 					)}
 				{month.cumulativeExpected > 0 && (
 					<div
-						className="absolute w-3 h-3 bg-gray-500 rounded-full border-2 border-white shadow z-40 pointer-events-none"
+						className="absolute w-3 h-3 bg-muted-foreground rounded-full border-2 border-background shadow z-40 pointer-events-none"
 						style={{
 							bottom: totalPosition,
 							right: -(GAP / 2 + 6),
@@ -268,6 +275,7 @@ export function MonthColumn({
 							onClick={onItemClick}
 							itemIndex={index}
 							height={getItemHeight(item)}
+							interactive={interactive}
 						/>
 					</div>
 				))}
@@ -275,9 +283,7 @@ export function MonthColumn({
 					<button
 						onClick={() => onAddIncome(month.id)}
 						className={`flex items-center justify-center gap-1 py-1 text-[10px] transition-colors rounded mx-0.5 mb-0.5 focus-visible:outline-2 focus-visible:outline-ring ${
-							isHovered
-								? "text-green-600 hover:bg-green-100 dark:hover:bg-green-950/50"
-								: "text-green-700/50 dark:text-green-500/50"
+							isHovered ? "text-income hover:bg-income/10" : "text-income/50"
 						}`}
 					>
 						<Plus className="h-3 w-3" />
@@ -300,37 +306,29 @@ export function MonthColumn({
 				className={`px-1 border-y border-border/50 ${centerBgClass} shrink-0 flex flex-col items-center justify-center relative z-10`}
 				style={{ height: CENTER_HEIGHT, marginLeft: -4, marginRight: -4, paddingLeft: 4, paddingRight: 4 }}
 			>
-				<span
-					className={`font-semibold uppercase tracking-wide text-[10px] ${
-						isNegativeBalance ? "text-red-200" : "text-gray-200"
-					}`}
-				>
+				<span className="font-medium uppercase tracking-wider text-[10px] text-white/70">
 					{month.name}
 				</span>
-				<div className="flex items-center gap-1 text-[9px]">
-					<span className="font-mono font-semibold text-white">
-						${month.cumulativeExpected.toLocaleString()}
+				<div className="flex items-baseline gap-1.5 whitespace-nowrap overflow-hidden max-w-full">
+					<span
+						className="text-[13px] font-semibold tabular-nums text-white"
+						title={`Projected balance at end of ${month.name}`}
+					>
+						{isNegativeBalance ? "−" : ""}${Math.abs(month.cumulativeExpected).toLocaleString()}
 					</span>
-					<span className="text-white/60 font-mono">
-						({hasActual && month.expectedBalance === month.actualBalance ? (
-							<span className="text-white/80">
-								{month.actualBalance >= 0 ? "+" : ""}{month.actualBalance.toLocaleString()}
-							</span>
-						) : (
-							<>
-								<span className="text-white/50">
-									{month.expectedBalance >= 0 ? "+" : ""}{month.expectedBalance.toLocaleString()}
-								</span>
-								{hasActual && (
-									<>
-										<span className="text-white/40">/</span>
-										<span className="text-white/80">
-											{month.actualBalance >= 0 ? "+" : ""}{month.actualBalance.toLocaleString()}
-										</span>
-									</>
-								)}
-							</>
-						)})
+					<span
+						className={`text-[10px] tabular-nums px-1 rounded-sm bg-white/10 ${
+							monthDelta >= 0 ? "text-emerald-300" : "text-red-300"
+						}`}
+						title={
+							showExpectedHint
+								? `Recorded ${formatDelta(month.actualBalance)} · planned ${formatDelta(month.expectedBalance)}`
+								: hasActual
+									? "Recorded change this month"
+									: "Planned change this month"
+						}
+					>
+						{formatDelta(monthDelta)}
 					</span>
 				</div>
 			</div>
@@ -338,7 +336,7 @@ export function MonthColumn({
 			<div className="flex-1 min-h-0 basis-0 flex flex-col overflow-visible relative z-10">
 				{month.cumulativeExpected < 0 && (
 					<div
-						className="absolute w-3 h-3 bg-red-500 rounded-full border-2 border-white shadow z-40 pointer-events-none"
+						className="absolute w-3 h-3 bg-negative rounded-full border-2 border-background shadow z-40 pointer-events-none"
 						style={{
 							top: totalPosition,
 							right: -(GAP / 2 + 6),
@@ -363,6 +361,7 @@ export function MonthColumn({
 							onClick={onItemClick}
 							itemIndex={incomeItems.length + index}
 							height={getItemHeight(item)}
+							interactive={interactive}
 						/>
 					</div>
 				))}
@@ -370,9 +369,7 @@ export function MonthColumn({
 					<button
 						onClick={() => onAddSpend(month.id)}
 						className={`flex items-center justify-center gap-1 py-1 text-[10px] transition-colors rounded mx-0.5 mt-0.5 focus-visible:outline-2 focus-visible:outline-ring ${
-							isHovered
-								? "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800/50"
-								: "text-muted-foreground/60"
+							isHovered ? "text-spend hover:bg-spend/10" : "text-spend/50"
 						}`}
 					>
 						<Plus className="h-3 w-3" />
